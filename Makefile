@@ -1,16 +1,15 @@
-cpp_source=signal_batch.cc sigmap.cc
+cpp_source=signal_batch.cc pore_model.cc sigmap.cc
 src_dir=src
 objs_dir=objs
 objs+=$(patsubst %.cc,$(objs_dir)/%.o,$(cpp_source))
 
-HDF5_DIR ?= /usr/local/pacerepov2/hdf5/1.10.3/intel-18.0
-HDF5_INCLUDE_DIR ?= ${HDF5_DIR}/include
-HDF5_LIB_DIR ?= ${HDF5_DIR}/lib
-HDF5_LIB ?= hdf5
+HDF5_INCLUDE_DIR ?= /usr/include/hdf5/serial
+HDF5_LIB_DIR ?= /usr/lib/x86_64-linux-gnu
+HDF5_LIB ?= hdf5_serial
 
 cxx=g++
-cxxflags=-std=c++11 -Wall -O3 -fopenmp -march=native -isystem ${HDF5_INCLUDE_DIR}
-ldflags=-L${HDF5_LIB_DIR} -Wl,--rpath=${HDF5_LIB_DIR} -l${HDF5_LIB} -lm -lz -ldl
+cxxflags=-std=c++11 -Wall -O3 -march=native -I${HDF5_INCLUDE_DIR}
+ldflags=-L${HDF5_LIB_DIR} -l${HDF5_LIB} -lm -lz
 
 exec=sigmap
 
@@ -24,10 +23,10 @@ dir:
 	mkdir -p $(objs_dir)
 
 $(exec): $(objs)
-	$(cxx) $(cxxflags) $(ldflags) $(objs) -o $(exec)
+	$(cxx) $(cxxflags) $(objs) -o $(exec) $(ldflags)
 	
 $(objs_dir)/%.o: $(src_dir)/%.cc
-	$(cxx) $(cxxflags) $(ldflags) -c $< -o $@
+	$(cxx) $(cxxflags) -c $< -o $@ $(ldflags)
 
 .PHONY: clean
 clean:

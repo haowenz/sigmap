@@ -5,15 +5,18 @@
 #include <string>
 
 #include "cxxopts.hpp"
+#include "pore_model.h"
 #include "signal_batch.h"
 #include "utils.h"
 
 namespace sigmap {
 void Sigmap::Map() {
-  sigmap::SignalBatch signal_batch;
+  SignalBatch signal_batch;
   signal_batch.InitializeLoading(signal_directory_);
   signal_batch.LoadAllReadSignals();
   signal_batch.FinalizeLoading();
+  PoreModel pore_model;
+  pore_model.Load(pore_model_file_path_);
 }
 
 void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
@@ -74,6 +77,13 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
       sigmap::ExitWithMessage("No reference file specified!");
     }
     std::cerr << "Reference file: " << reference_file_path << "\n";
+    std::string pore_model_file_path;
+    if (result.count("p")) {
+      pore_model_file_path = result["pore-model"].as<std::string>();
+    } else {
+      sigmap::ExitWithMessage("No pore model file specified!");
+    }
+    std::cerr << "Pore model file: " << pore_model_file_path << "\n";
     std::string reference_index_file_path;
     if (result.count("x")) {
       reference_file_path = result["ref-index"].as<std::string>();
@@ -95,7 +105,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
       sigmap::ExitWithMessage("No output file specified!");
     }
     std::cerr << "Output file: " << output_file_path << "\n";
-    Sigmap sigmap_for_mapping(signal_dir);
+    Sigmap sigmap_for_mapping(pore_model_file_path, signal_dir);
     sigmap_for_mapping.Map();
   } else if (result.count("h")) {
     std::cerr << options.help({"", "Indexing", "Mapping", "Input", "Output"});

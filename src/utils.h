@@ -60,6 +60,38 @@ inline static void ExitWithMessage(const std::string &message) {
   exit(-1);
 }
 
+// For sequence manipulation
+static constexpr uint8_t char_to_uint8_table_[256] = {4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 4, 1, 4, 4, 4, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 4, 1, 4, 4, 4, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
+static constexpr char uint8_to_char_table_[8] = {'A', 'C', 'G', 'T', 'N', 'N', 'N', 'N'};
+
+inline static uint8_t CharToUint8(const char c) {
+  return char_to_uint8_table_[(uint8_t)c];
+}
+
+inline static char Uint8ToChar(const uint8_t i) {
+  return uint8_to_char_table_[i];
+}
+
+inline static uint64_t GenerateSeedFromSequence(const char *sequence, size_t sequence_length, uint32_t start_position, uint32_t seed_length) {
+  //const char *sequence = GetSequenceAt(sequence_index);
+  //uint32_t sequence_length = GetSequenceLengthAt(sequence_index);
+  uint64_t mask = (((uint64_t)1) << (2 * seed_length)) - 1;
+  uint64_t seed = 0;
+  for (uint32_t i = 0; i < seed_length; ++i) {
+    if (start_position + i < sequence_length) {
+      uint8_t current_base = CharToUint8(sequence[i + start_position]);
+      if (current_base < 4) { // not an ambiguous base
+        seed = ((seed << 2) | current_base) & mask; // forward k-mer
+      } else {
+        seed = (seed << 2) & mask; // N->A
+      }
+    } else {
+      seed = (seed << 2) & mask; // Pad A
+    }
+  }
+  return seed;
+}
+
 // For FAST5 manipulation
 inline static FAST5File OpenFAST5(const std::string &fast5_file_path) {
   FAST5File fast5_file;
