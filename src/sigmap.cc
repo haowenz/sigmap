@@ -13,10 +13,15 @@ namespace sigmap {
 void Sigmap::Map() {
   SignalBatch signal_batch;
   signal_batch.InitializeLoading(signal_directory_);
-  signal_batch.LoadAllReadSignals();
+  size_t num_loaded_read_signals = signal_batch.LoadAllReadSignals();
   signal_batch.FinalizeLoading();
   PoreModel pore_model;
   pore_model.Load(pore_model_file_path_);
+  double real_normalization_start_time = GetRealTime();
+  for (size_t read_index = 0; read_index < num_loaded_read_signals; ++read_index) {
+    signal_batch.NormalizeSignalAt(read_index);
+  }
+  std::cerr << "Normalize " << num_loaded_read_signals << " read signals in " << GetRealTime() - real_normalization_start_time << "s.\n";
 }
 
 void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {

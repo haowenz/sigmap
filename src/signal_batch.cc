@@ -1,6 +1,10 @@
 #include "signal_batch.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <hdf5.h>
+#include <vector>
 #include "utils.h"
 
 namespace sigmap {
@@ -15,9 +19,9 @@ void SignalBatch::InitializeLoading(const std::string &signal_directory) {
 void SignalBatch::FinalizeLoading() {
 }
 
-void SignalBatch::LoadAllReadSignals() {
+size_t SignalBatch::LoadAllReadSignals() {
   double real_start_time = GetRealTime();
-  int num_reads = 0;
+  size_t num_reads = 0;
   auto dir_list = ListDirectory(signal_directory_);
   for (const auto& relative_path : dir_list) {
     if (relative_path == "." or relative_path == "..") {
@@ -45,6 +49,7 @@ void SignalBatch::LoadAllReadSignals() {
     }
   }
   std::cerr << "Loaded " << num_reads << " reads in " << GetRealTime() - real_start_time << "s.\n";
+  return num_reads;
 }
 
 void SignalBatch::AddSignalsFromFAST5(const std::string &fast5_file_path) {
@@ -69,7 +74,15 @@ void SignalBatch::AddSignalsFromFAST5(const std::string &fast5_file_path) {
 }
 
 void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
-  Signal read_signal;
+  //Signal read_signal = new Signal();
+  size_t name_length;
+  char *name = nullptr;
+  size_t signal_length;
+  float *signal;
+  float digitisation;
+  float range;
+  float offset;
+
   herr_t fast5_err;
   float scale;
   int num_dims;
@@ -80,10 +93,10 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
   if (read_name_length < 0) {
     ExitWithMessage("The read name length is invalid!\n");
   }
-  read_signal.name_length = (size_t)read_name_length;
-  read_signal.name = (char*)calloc(1 + read_signal.name_length, sizeof(char));
-  read_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, read_signal.name, 1 + read_signal.name_length, H5P_DEFAULT); 
-  if (read_name_length != (ssize_t)read_signal.name_length) {
+  name_length = (size_t)read_name_length;
+  name = (char*)calloc(1 + name_length, sizeof(char));
+  read_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, name, 1 + name_length, H5P_DEFAULT);
+  if (read_name_length != (ssize_t)name_length) {
     ExitWithMessage("Read name lengths don't match! Failed to load read name.");
   }
   // Get channel parameters
@@ -93,14 +106,14 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
     fprintf(stderr, "Failed to open channel_id group %s\n", channel_id_group);
     exit(-1); // TODO(Haowen): fix this later
   }
-  read_signal.digitisation = GetFloatAttributeInGroup(channel_id_group_id, "digitisation");
-  read_signal.range = GetFloatAttributeInGroup(channel_id_group_id, "range");
-  read_signal.offset = GetFloatAttributeInGroup(channel_id_group_id, "offset");
+  digitisation = GetFloatAttributeInGroup(channel_id_group_id, "digitisation");
+  range = GetFloatAttributeInGroup(channel_id_group_id, "range");
+  offset = GetFloatAttributeInGroup(channel_id_group_id, "offset");
   //scaling.sample_rate = GetFloatAttributeInGroup(channel_id_group_id, "sampling_rate");
   fast5_err = H5Gclose(channel_id_group_id);
   assert(fast5_err >= 0);
   // Get raw signal and convert it into current
-  std::string read_signal_group = std::string(LEGACY_FAST5_RAW_ROOT) + "/" + std::string(read_signal.name) + "/Signal";
+  std::string read_signal_group = std::string(LEGACY_FAST5_RAW_ROOT) + "/" + std::string(name) + "/Signal";
   hid_t dataset_id = H5Dopen(fast5_file.hdf5_file, read_signal_group.c_str(), H5P_DEFAULT);
   if (dataset_id < 0) {
     fprintf(stderr, "Failed to open dataset '%s' to read signal from.\n", read_signal_group.c_str());
@@ -115,23 +128,41 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
   hsize_t first_dimension_size;
   num_dims = H5Sget_simple_extent_dims(dataspace_id, &first_dimension_size, NULL);
   assert(num_dims == 1); // There should be 1 dimension and the size of that dimension is the signal length
-  read_signal.signal_length = first_dimension_size;
-  read_signal.signal = (float*)calloc(read_signal.signal_length, sizeof(float));
-  fast5_err = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, read_signal.signal);
+  signal_length = first_dimension_size;
+  signal = (float*)calloc(signal_length, sizeof(float));
+  fast5_err = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, signal);
   if (fast5_err < 0) {
-    free(read_signal.signal);
     fprintf(stderr, "Failed to load read signal data from dataset %s.\n", read_signal_group.c_str());
+    free(signal);
     goto cleanup4;
   }
   // convert to pA
-  scale = read_signal.range / read_signal.digitisation;
-  for (size_t i = 0; i < read_signal.signal_length; i++) {
-    read_signal.signal[i] = (read_signal.signal[i] + read_signal.offset) * scale;
+  scale = range / digitisation;
+  for (size_t i = 0; i < signal_length; i++) {
+    signal[i] = (signal[i] + offset) * scale;
   }
+  signals_.emplace_back(Signal{name_length, name, digitisation, range, offset, signal_length, signal});
 cleanup4:
   H5Sclose(dataspace_id);
 cleanup3:
   H5Dclose(dataset_id);
-  std::cerr << "Read name: " << read_signal.name << ", # signal points: " << read_signal.signal_length << ".\n";
+  //std::cerr << "Read name: " << name << ", # signal points: " << signal_length << ".\n";
+}
+
+void SignalBatch::NormalizeSignalAt(size_t signal_index) {
+  // Should use a linear algorithm like median of medians
+  // But for now let us use sort
+  std::vector<float> tmp_signal((signals_[signal_index]).signal, (signals_[signal_index]).signal + (signals_[signal_index]).signal_length);
+  std::nth_element(tmp_signal.begin(), tmp_signal.begin() + tmp_signal.size() / 2, tmp_signal.end());
+  float signal_median = tmp_signal[tmp_signal.size() / 2]; // This is a fake median, but should be okay for a quick implementation
+  for (size_t i = 0; i < tmp_signal.size(); ++i) {
+    tmp_signal[i] = std::abs(tmp_signal[i] - signal_median);
+  }
+  std::nth_element(tmp_signal.begin(), tmp_signal.begin() + tmp_signal.size() / 2, tmp_signal.end());
+  float MAD = tmp_signal[tmp_signal.size() / 2]; // Again, fake MAD, ok for a quick implementation
+  // Now we can normalize signal
+  for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
+    ((signals_[signal_index]).signal)[i] = (((signals_[signal_index]).signal)[i] - signal_median) / MAD;
+  }
 }
 } // namespace sigmap

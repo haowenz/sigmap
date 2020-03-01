@@ -12,35 +12,33 @@ struct Signal {
   size_t name_length;
   char *name;
   // channel_id
-  int digitisation;
+  float digitisation;
   float range;
-  int offset;
+  float offset;
   // signal
   size_t signal_length;
   float *signal;
-  Signal() {
-    name = nullptr;
-    signal = nullptr;
-  }
-  ~Signal() {
-    if (name != nullptr) {
-      free(name);
-    }
-    if (signal != nullptr) {
-      free(signal);
-    }
-  }
 };
 
 class SignalBatch {
  public:
   SignalBatch(){}
-  ~SignalBatch(){}
+  ~SignalBatch() {
+    for (size_t read_index = 0; read_index < signals_.size(); ++read_index) {
+      if (signals_[read_index].name != nullptr) {
+        free(signals_[read_index].name);
+      }
+      if (signals_[read_index].signal != nullptr) {
+        free(signals_[read_index].signal);
+      }
+    }
+  }
   void InitializeLoading(const std::string &signal_directory);
   void FinalizeLoading();
-  void LoadAllReadSignals();
+  size_t LoadAllReadSignals();
   void AddSignalsFromFAST5(const std::string &fast5_file_path);
   void AddSignalFromSingleFAST5(const FAST5File& fast5_file);
+  void NormalizeSignalAt(size_t signal_index);
 
  protected:
   std::string signal_directory_;
