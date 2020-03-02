@@ -1,11 +1,15 @@
-cpp_source=signal_batch.cc pore_model.cc sigmap.cc
+cpp_source=sequence_batch.cc signal_batch.cc pore_model.cc sigmap.cc
 src_dir=src
 objs_dir=objs
 objs+=$(patsubst %.cc,$(objs_dir)/%.o,$(cpp_source))
 
-HDF5_INCLUDE_DIR ?= /usr/include/hdf5/serial
-HDF5_LIB_DIR ?= /usr/lib/x86_64-linux-gnu
-HDF5_LIB ?= hdf5_serial
+#HDF5_INCLUDE_DIR ?= /usr/include/hdf5/serial
+#HDF5_LIB_DIR ?= /usr/lib/x86_64-linux-gnu
+#HDF5_LIB ?= hdf5_serial
+HDF5_DIR ?= /usr/local/pacerepov2/hdf5/1.10.3/intel-18.0
+HDF5_INCLUDE_DIR ?= ${HDF5_DIR}/include
+HDF5_LIB_DIR ?= ${HDF5_DIR}/lib
+HDF5_LIB ?= hdf5
 
 cxx=g++
 cxxflags=-std=c++11 -Wall -O3 -march=native -I${HDF5_INCLUDE_DIR}

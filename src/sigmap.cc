@@ -5,8 +5,9 @@
 #include <string>
 
 #include "cxxopts.hpp"
-#include "pore_model.h"
+#include "sequence_batch.h"
 #include "signal_batch.h"
+#include "pore_model.h"
 #include "utils.h"
 
 namespace sigmap {
@@ -15,13 +16,17 @@ void Sigmap::Map() {
   signal_batch.InitializeLoading(signal_directory_);
   size_t num_loaded_read_signals = signal_batch.LoadAllReadSignals();
   signal_batch.FinalizeLoading();
-  PoreModel pore_model;
-  pore_model.Load(pore_model_file_path_);
   double real_normalization_start_time = GetRealTime();
   for (size_t read_index = 0; read_index < num_loaded_read_signals; ++read_index) {
     signal_batch.NormalizeSignalAt(read_index);
   }
   std::cerr << "Normalize " << num_loaded_read_signals << " read signals in " << GetRealTime() - real_normalization_start_time << "s.\n";
+  PoreModel pore_model;
+  pore_model.Load(pore_model_file_path_);
+  SequenceBatch reference;
+  reference.InitializeLoading(reference_file_path_);
+  uint32_t num_reference_sequences = reference.LoadAllSequences();
+
 }
 
 void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
@@ -91,7 +96,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
     std::cerr << "Pore model file: " << pore_model_file_path << "\n";
     std::string reference_index_file_path;
     if (result.count("x")) {
-      reference_file_path = result["ref-index"].as<std::string>();
+      reference_index_file_path = result["ref-index"].as<std::string>();
     } else {
       sigmap::ExitWithMessage("No reference index file specified!");
     }
@@ -110,7 +115,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
       sigmap::ExitWithMessage("No output file specified!");
     }
     std::cerr << "Output file: " << output_file_path << "\n";
-    Sigmap sigmap_for_mapping(pore_model_file_path, signal_dir);
+    Sigmap sigmap_for_mapping(reference_file_path, pore_model_file_path, signal_dir);
     sigmap_for_mapping.Map();
   } else if (result.count("h")) {
     std::cerr << options.help({"", "Indexing", "Mapping", "Input", "Output"});
