@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "pore_model.h"
+#include "sequence_batch.h"
 #include "utils.h"
 
 namespace sigmap {
@@ -39,6 +41,7 @@ class SignalBatch {
   void AddSignalsFromFAST5(const std::string &fast5_file_path);
   void AddSignalFromSingleFAST5(const FAST5File& fast5_file);
   void NormalizeSignalAt(size_t signal_index);
+  void ConvertSequencesToSignals(const SequenceBatch &sequence_batch, const PoreModel &pore_model, size_t num_sequences);
 
  protected:
   std::string signal_directory_;

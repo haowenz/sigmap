@@ -26,7 +26,8 @@ void Sigmap::Map() {
   SequenceBatch reference;
   reference.InitializeLoading(reference_file_path_);
   uint32_t num_reference_sequences = reference.LoadAllSequences();
-
+  SignalBatch reference_signal_batch;
+  reference_signal_batch.ConvertSequencesToSignals(reference, pore_model, num_reference_sequences);
 }
 
 void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {

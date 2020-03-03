@@ -5,6 +5,7 @@
 #include <cmath>
 #include <hdf5.h>
 #include <vector>
+
 #include "utils.h"
 
 namespace sigmap {
@@ -164,5 +165,15 @@ void SignalBatch::NormalizeSignalAt(size_t signal_index) {
   for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
     ((signals_[signal_index]).signal)[i] = (((signals_[signal_index]).signal)[i] - signal_median) / MAD;
   }
+}
+
+void SignalBatch::ConvertSequencesToSignals(const SequenceBatch &sequence_batch, const PoreModel &pore_model, size_t num_sequences) {
+  double real_start_time = GetRealTime();
+  for (size_t sequence_index = 0; sequence_index < num_sequences; ++sequence_index) {
+    size_t sequence_length = sequence_batch.GetSequenceLengthAt(sequence_index);
+    float* signal = pore_model.GetLevelMeansAt(sequence_batch.GetSequenceAt(sequence_index), 0, sequence_length);
+    signals_.emplace_back(Signal{0, nullptr, 0, 0, 0, sequence_length - pore_model.GetKmerSize() + 1, signal});
+  }
+  std::cerr << "Convert " << num_sequences << " sequences to signals in " << GetRealTime() - real_start_time << "s.\n";
 }
 } // namespace sigmap

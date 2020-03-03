@@ -22,6 +22,10 @@ class PoreModel {
   ~PoreModel(){}
   void Load(const std::string &pore_model_file_path);
   void Print();
+  float* GetLevelMeansAt(const char *sequence, uint32_t start_position, uint32_t end_position) const;
+  int GetKmerSize() const {
+    return kmer_size_;
+  }
 
  protected:
   int kmer_size_;
