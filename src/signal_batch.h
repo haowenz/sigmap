@@ -42,6 +42,12 @@ class SignalBatch {
   void AddSignalFromSingleFAST5(const FAST5File& fast5_file);
   void NormalizeSignalAt(size_t signal_index);
   void ConvertSequencesToSignals(const SequenceBatch &sequence_batch, const PoreModel &pore_model, size_t num_sequences);
+  const Signal& GetSignalAt(size_t signal_index) const {
+    return signals_[signal_index];
+  }
+  const char* GetSignalNameAt(size_t signal_index) const {
+    return signals_[signal_index].name;
+  }
 
  protected:
   std::string signal_directory_;

@@ -6,7 +6,6 @@
 
 #include "cxxopts.hpp"
 #include "sequence_batch.h"
-#include "signal_batch.h"
 #include "pore_model.h"
 #include "utils.h"
 
@@ -28,6 +27,43 @@ void Sigmap::Map() {
   uint32_t num_reference_sequences = reference.LoadAllSequences();
   SignalBatch reference_signal_batch;
   reference_signal_batch.ConvertSequencesToSignals(reference, pore_model, num_reference_sequences);
+  real_normalization_start_time = GetRealTime();
+  for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
+    reference_signal_batch.NormalizeSignalAt(reference_signal_index);
+  }
+  std::cerr << "Normalize " << num_reference_sequences << " reference signals in " << GetRealTime() - real_normalization_start_time << "s.\n";
+  for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
+    for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
+      std::cerr << "Read name: " << signal_batch.GetSignalNameAt(read_signal_index) << ", reference name: " << reference.GetSequenceNameAt(reference_signal_index) << "\n";
+      sDTW(reference_signal_batch.GetSignalAt(reference_signal_index), signal_batch.GetSignalAt(read_signal_index));
+    }
+  }
+}
+
+float Sigmap::sDTW(const Signal &target_signal, const Signal &query_signal) {
+  double real_start_time = GetRealTime();
+  size_t query_length = query_signal.signal_length;
+  size_t target_length = target_signal.signal_length;
+  float min_cost = std::numeric_limits<float>::max();
+  size_t mapping_end_position = 0;
+  std::vector<float> previous_row(query_length + 1, std::numeric_limits<float>::max());
+  previous_row[0] = 0;
+  std::vector<float> current_row(query_length + 1);
+  for (size_t target_position = 1; target_position <= target_length; ++target_position) {
+    current_row[0] = 0;
+    for (size_t query_position = 1; query_position <= query_length; ++query_position) {
+      float cost = std::abs(target_signal.signal[target_position - 1] - query_signal.signal[query_position - 1]);
+      current_row[query_position] = cost + std::min({previous_row[query_position - 1], previous_row[query_position], current_row[query_position - 1]});
+    }
+    if (current_row[query_length] < min_cost) {
+      min_cost = current_row[query_length];
+      mapping_end_position = target_position;
+    }
+    current_row.swap(previous_row);
+  }
+  std::cerr << "Finished sDTW in " << GetRealTime() - real_start_time << ", target length: " << target_length << ", query length: " << query_length << "\n";
+  std::cerr << "DTW distance: " << min_cost << ", mapping_end_position: " << mapping_end_position << ".\n";
+  return min_cost;
 }
 
 void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
