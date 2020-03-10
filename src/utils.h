@@ -1,6 +1,7 @@
 #ifndef UTILS_H_
 #define UTILS_H_
 
+#include <algorithm>
 #include <dirent.h>
 #include <hdf5.h>
 #include <iostream>
@@ -9,6 +10,8 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <vector>
+
+#include "cwt.h"
 
 #define LEGACY_FAST5_RAW_ROOT "/Raw/Reads/"
 
@@ -123,6 +126,59 @@ inline static float GetFloatAttributeInGroup(hid_t group_id, const char *attribu
   H5Aread(attribute_id, H5T_NATIVE_FLOAT, &attribute_value);
   H5Aclose(attribute_id);
   return attribute_value;
+}
+
+// For signal processing
+static float GetNormalizedSignal(const float *signal, size_t signal_length, std::vector<float> &normalized_signal) {
+  // Should use a linear algorithm like median of medians
+  // One such better algorithm can be found here: https://rcoh.me/posts/linear-time-median-finding/
+  // But for now let us use sort
+  normalized_signal.assign(signal, signal + signal_length);
+  std::nth_element(normalized_signal.begin(), normalized_signal.begin() + signal_length / 2, normalized_signal.end());
+  float signal_median = normalized_signal[signal_length / 2]; // This is a fake median, but should be okay for a quick implementation
+  for (size_t i = 0; i < signal_length; ++i) {
+    normalized_signal[i] = std::abs(normalized_signal[i] - signal_median);
+  }
+  std::nth_element(normalized_signal.begin(), normalized_signal.begin() + signal_length / 2, normalized_signal.end());
+  float MAD = normalized_signal[signal_length / 2]; // Again, fake MAD, ok for a quick implementation
+  // Now we can normalize signal
+  for (size_t i = 0; i < signal_length; ++i) {
+    normalized_signal[i] = (signal[i] - signal_median) / MAD;
+  }
+  return MAD;
+}
+
+static void GetCWTSignal(const float *signal, size_t signal_length, float scale0, std::vector<float> &cwt_signal) {
+  char wave[] = "dog";
+  char type[] = "pow";
+  double param = 2.0;
+  double dt = 1;
+  double dj = 1; // Separation bewteen scales.
+  //double scale0 = sqrt(2);
+  int J = 1;
+  int N = signal_length;
+  cwt_object wt = cwt_init(wave, param, N, dt, J);
+  setCWTScales(wt, scale0, dj, type, 2.0);
+  cwt(wt, signal);
+  for (size_t i = 0; i < signal_length; ++i) {
+    cwt_signal.push_back(wt->output[i].re); 
+  }
+  //cwt_summary(wt);
+  cwt_free(wt);
+}
+
+static void GetPeaks(const float *signal, size_t signal_length, float selective, std::vector<float> &peaks) {
+  float previous_valley = signal[0];
+  float previous_peak = signal[0];
+  for (size_t i = 1; i < signal_length - 1; ++i) {
+    if (signal[i] > signal[i - 1] && signal[i] >= signal[i + 1] && signal[i] >= previous_valley + selective) {
+      peaks.push_back(signal[i]);
+      previous_peak = signal[i];
+    } else if (signal[i] < signal[i - 1] && signal[i] <= signal[i + 1] && signal[i] <= previous_peak - selective) {
+      peaks.push_back(signal[i]);
+      previous_valley = signal[i];
+    }
+  }
 }
 } // namespace sigmap
 
