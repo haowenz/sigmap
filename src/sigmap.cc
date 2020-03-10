@@ -37,18 +37,24 @@ void Sigmap::Map() {
   //    sDTW(reference_signal_batch.GetSignalAt(reference_signal_index), read_signal_batch.GetSignalAt(read_signal_index));
   //  }
   //}
-  std::vector<std::vector<float> > reference_signals;
+  std::vector<std::vector<float> > reference_feature_signals;
+  std::vector<std::vector<size_t> > reference_feature_positions;
   for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
-    reference_signals.push_back(std::vector<float>());
-    GetFeatureSignal(reference_signal_batch.GetSignalAt(reference_signal_index), sqrt(2), reference_signals.back());
+    reference_feature_signals.push_back(std::vector<float>());
+    reference_feature_positions.push_back(std::vector<size_t>());
+    GetFeatureSignal(reference_signal_batch.GetSignalAt(reference_signal_index), sqrt(2), reference_feature_signals.back(), reference_feature_positions.back());
   }
-  std::vector<float> read_signal;
+  std::vector<float> read_feature_signal;
+  std::vector<size_t> read_feature_positions;
   for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
-    read_signal.clear();
-    GetFeatureSignal(read_signal_batch.GetSignalAt(read_signal_index), 8 * sqrt(2), read_signal);
+    read_feature_signal.clear();
+    read_feature_positions.clear();
+    ssize_t feature_mapping_end_position = -1;
+    GetFeatureSignal(read_signal_batch.GetSignalAt(read_signal_index), 8 * sqrt(2), read_feature_signal, read_feature_positions);
     for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
       std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", reference name: " << reference.GetSequenceNameAt(reference_signal_index) << "\n";
-      sDTW(reference_signals[reference_signal_index].data(), reference_signals[reference_signal_index].size(), read_signal.data(), read_signal.size());
+      float dtw_distance = sDTW(reference_feature_signals[reference_signal_index].data(), reference_feature_signals[reference_signal_index].size(), read_feature_signal.data(), read_feature_signal.size(), feature_mapping_end_position);
+      std::cerr << "DTW distance: " << dtw_distance << ", feature_mapping_end_position: " << feature_mapping_end_position << ", rough mapping end postion: " << reference_feature_positions[reference_signal_index][feature_mapping_end_position] << ".\n";
     }
     std::cerr << "\n";
   }
@@ -57,14 +63,14 @@ void Sigmap::Map() {
   reference_signal_batch.FinalizeLoading();
 }
 
-void Sigmap::GetFeatureSignal(const Signal &signal, float scale0, std::vector<float> &signal_feature) {
+void Sigmap::GetFeatureSignal(const Signal &signal, float scale0, std::vector<float> &feature_signal, std::vector<size_t> &feature_positions) {
   std::vector<float> buffer;
   GetNormalizedSignal(signal.signal, signal.signal_length, buffer);
-  GetCWTSignal(buffer.data(), buffer.size(), scale0, signal_feature);
+  GetCWTSignal(buffer.data(), buffer.size(), scale0, feature_signal);
   buffer.clear();
-  float MAD = GetNormalizedSignal(signal_feature.data(), signal_feature.size(), buffer);
-  signal_feature.clear();
-  GetPeaks(buffer.data(), buffer.size(), MAD / 8, signal_feature);
+  float MAD = GetNormalizedSignal(feature_signal.data(), feature_signal.size(), buffer);
+  feature_signal.clear();
+  GetPeaks(buffer.data(), buffer.size(), MAD / 8, feature_signal, feature_positions);
 }
 
 void Sigmap::FAST5ToText() {
@@ -85,12 +91,12 @@ void Sigmap::FAST5ToText() {
   read_signal_batch.FinalizeLoading();
 }
 
-float Sigmap::sDTW(const float *target_signal, size_t target_length, const float *query_signal, size_t query_length) {
+float Sigmap::sDTW(const float *target_signal, size_t target_length, const float *query_signal, size_t query_length, ssize_t &mapping_end_position) {
   double real_start_time = GetRealTime();
   //size_t query_length = query_signal.signal_length;
   //size_t target_length = target_signal.signal_length;
   float min_dtw_distance = std::numeric_limits<float>::max();
-  size_t mapping_end_position = 0;
+  mapping_end_position = -1;
   std::vector<float> previous_row(query_length + 1, std::numeric_limits<float>::max());
   previous_row[0] = 0;
   std::vector<float> current_row(query_length + 1);
@@ -107,7 +113,6 @@ float Sigmap::sDTW(const float *target_signal, size_t target_length, const float
     current_row.swap(previous_row);
   }
   std::cerr << "Finished sDTW in " << GetRealTime() - real_start_time << ", target length: " << target_length << ", query length: " << query_length << "\n";
-  std::cerr << "DTW distance: " << min_dtw_distance << ", mapping_end_position: " << mapping_end_position << ".\n";
   return min_dtw_distance;
 }
 

@@ -167,15 +167,17 @@ static void GetCWTSignal(const float *signal, size_t signal_length, float scale0
   cwt_free(wt);
 }
 
-static void GetPeaks(const float *signal, size_t signal_length, float selective, std::vector<float> &peaks) {
+static void GetPeaks(const float *signal, size_t signal_length, float selective, std::vector<float> &peaks, std::vector<size_t> &peak_positions) {
   float previous_valley = signal[0];
   float previous_peak = signal[0];
   for (size_t i = 1; i < signal_length - 1; ++i) {
     if (signal[i] > signal[i - 1] && signal[i] >= signal[i + 1] && signal[i] >= previous_valley + selective) {
       peaks.push_back(signal[i]);
+      peak_positions.push_back(i);
       previous_peak = signal[i];
     } else if (signal[i] < signal[i - 1] && signal[i] <= signal[i + 1] && signal[i] <= previous_peak - selective) {
       peaks.push_back(signal[i]);
+      peak_positions.push_back(i);
       previous_valley = signal[i];
     }
   }
