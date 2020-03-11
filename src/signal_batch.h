@@ -11,7 +11,6 @@
 namespace sigmap {
 struct Signal {
   // read group name
-  size_t name_length;
   char *name;
   // channel_id
   float digitisation;
