@@ -2,6 +2,7 @@
 #define UTILS_H_
 
 #include <algorithm>
+#include <assert.h>
 #include <dirent.h>
 #include <hdf5.h>
 #include <iostream>
@@ -225,13 +226,46 @@ static float GetNormalizedSignal(const float *signal, size_t signal_length, std:
   return MAD;
 }
 
+static float GetZscoreNormalizedSignal(const float *signal, size_t signal_length, std::vector<float> &normalized_signal) {
+  // Calculate mean
+  float mean = 0;
+  for (size_t i = 0; i < signal_length; ++i) {
+    mean += signal[i];
+  }
+  mean /= signal_length;
+  // Calculate standard deviation
+  float SD = 0;
+  for (size_t i = 0; i < signal_length; ++i) {
+    SD += (signal[i] - mean) * (signal[i] - mean);
+  }
+  SD /= (signal_length - 1);
+  SD = sqrt(SD); 
+  // Now we can normalize signal
+  for (size_t i = 0; i < signal_length; ++i) {
+    normalized_signal.emplace_back((signal[i] - mean) / SD);
+  }
+  return SD;
+}
+
+static void GetSignalMinAndMax(const float *signal, size_t signal_length, float &min, float &max) {
+  min = signal[0];
+  max = signal[0];
+  for (size_t position = 0; position < signal_length; ++position) {
+    if (signal[position] < min) {
+      min = signal[position];
+    }
+    if (signal[position] > max) {
+      max = signal[position];
+    }
+  }
+}
+
 static void GetCWTSignal(const float *signal, size_t signal_length, float scale0, std::vector<float> &cwt_signal) {
   char wave[] = "dog";
   char type[] = "pow";
   double param = 2.0;
   double dt = 1;
   double dj = 1; // Separation bewteen scales.
-  //double scale0 = sqrt(2);
   int J = 1;
   int N = signal_length;
   cwt_object wt = cwt_init(wave, param, N, dt, J);
@@ -258,6 +292,34 @@ static void GetPeaks(const float *signal, size_t signal_length, float selective,
       previous_valley = signal[i];
     }
   }
+}
+
+static size_t GetSignalsTotalLength(const std::vector<std::vector<float> > &signals) {
+  size_t length = 0;
+  for (size_t i = 0; i < signals.size(); ++i) {
+    length += signals[i].size();
+  }
+  return length;
+}
+
+static void SaveVectorToFile(const float *signal, size_t signal_length, const std::string &file_path) {
+  FILE *output_file = fopen(file_path.c_str(), "w");
+  assert(output_file != NULL);
+  for (size_t signal_position = 0; signal_position < signal_length - 1; ++signal_position) {
+    fprintf(output_file, "%f\t", signal[signal_position]);
+  }
+  fprintf(output_file, "%f\n", signal[signal_length - 1]);
+  fclose(output_file);
+}
+
+static void SaveVectorToFile(const size_t *positions, size_t signal_length, const std::string &file_path) {
+  FILE *output_file = fopen(file_path.c_str(), "w");
+  assert(output_file != NULL);
+  for (size_t signal_position = 0; signal_position < signal_length - 1; ++signal_position) {
+    fprintf(output_file, "%lu\t", positions[signal_position]);
+  }
+  fprintf(output_file, "%lu\n", positions[signal_length - 1]);
+  fclose(output_file);
 }
 } // namespace sigmap
 

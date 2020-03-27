@@ -180,8 +180,10 @@ void SignalBatch::ConvertSequencesToSignals(const SequenceBatch &sequence_batch,
   double real_start_time = GetRealTime();
   for (size_t sequence_index = 0; sequence_index < num_sequences; ++sequence_index) {
     size_t sequence_length = sequence_batch.GetSequenceLengthAt(sequence_index);
-    float* signal = pore_model.GetLevelMeansAt(sequence_batch.GetSequenceAt(sequence_index), 0, sequence_length);
-    signals_.emplace_back(Signal{nullptr, 0, 0, 0, sequence_length - pore_model.GetKmerSize() + 1, signal});
+    float *signal = pore_model.GetLevelMeansAt(sequence_batch.GetSequenceAt(sequence_index), 0, sequence_length);
+    char *name =  (char*)calloc(1 + sequence_batch.GetSequenceNameLengthAt(sequence_index), sizeof(char));
+    strcpy(name, sequence_batch.GetSequenceNameAt(sequence_index));
+    signals_.emplace_back(Signal{name, 0, 0, 0, sequence_length - pore_model.GetKmerSize() + 1, signal});
   }
   std::cerr << "Convert " << num_sequences << " sequences to signals in " << GetRealTime() - real_start_time << "s.\n";
 }

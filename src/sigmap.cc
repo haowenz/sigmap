@@ -5,38 +5,29 @@
 #include <string>
 
 #include "cxxopts.hpp"
+#include "nanoflann.hpp"
+#include "spatial_index.h"
 #include "sequence_batch.h"
 #include "pore_model.h"
 #include "utils.h"
 
 namespace sigmap {
 void Sigmap::Map() {
+  // Load read signals
   SignalBatch read_signal_batch;
   read_signal_batch.InitializeLoading(signal_directory_);
   size_t num_loaded_read_signals = read_signal_batch.LoadAllReadSignals();
-  //double real_normalization_start_time = GetRealTime();
-  //for (size_t read_index = 0; read_index < num_loaded_read_signals; ++read_index) {
-  //  read_signal_batch.NormalizeSignalAt(read_index);
-  //}
-  //std::cerr << "Normalize " << num_loaded_read_signals << " read signals in " << GetRealTime() - real_normalization_start_time << "s.\n";
+  // Load pore model
   PoreModel pore_model;
   pore_model.Load(pore_model_file_path_);
-  SequenceBatch reference;
-  reference.InitializeLoading(reference_file_path_);
-  uint32_t num_reference_sequences = reference.LoadAllSequences();
+  // Load reference genome
+  SequenceBatch reference_sequence_batch;
+  reference_sequence_batch.InitializeLoading(reference_file_path_);
+  uint32_t num_reference_sequences = reference_sequence_batch.LoadAllSequences();
+  // Use pore model to convert reference sequence to signal
   SignalBatch reference_signal_batch;
-  reference_signal_batch.ConvertSequencesToSignals(reference, pore_model, num_reference_sequences);
-  //real_normalization_start_time = GetRealTime();
-  //for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
-  //  reference_signal_batch.NormalizeSignalAt(reference_signal_index);
-  //}
-  //std::cerr << "Normalize " << num_reference_sequences << " reference signals in " << GetRealTime() - real_normalization_start_time << "s.\n";
-  //for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
-  //  for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
-  //    std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", reference name: " << reference.GetSequenceNameAt(reference_signal_index) << "\n";
-  //    sDTW(reference_signal_batch.GetSignalAt(reference_signal_index), read_signal_batch.GetSignalAt(read_signal_index));
-  //  }
-  //}
+  reference_signal_batch.ConvertSequencesToSignals(reference_sequence_batch, pore_model, num_reference_sequences);
+  // Perform CWT on reference signals
   std::vector<std::vector<float> > reference_feature_signals;
   std::vector<std::vector<size_t> > reference_feature_positions;
   for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
@@ -44,33 +35,155 @@ void Sigmap::Map() {
     reference_feature_positions.push_back(std::vector<size_t>());
     GetFeatureSignal(reference_signal_batch.GetSignalAt(reference_signal_index), sqrt(2), reference_feature_signals.back(), reference_feature_positions.back());
   }
+  // Load spatial index for reference signals 
+  SpatialIndex reference_spatial_index(1000, std::vector<int>(1000,5000), reference_index_file_path_);
+  reference_spatial_index.Load();
+  // Map each reads
+  double real_start_time = GetRealTime();
+  int read_signal_point_cloud_step_size = 5;
+  std::vector<float> read_feature_signal;
+  std::vector<size_t> read_feature_positions;
+  std::vector<std::vector<float> > read_point_cloud;
+  std::vector<uint64_t> positive_hits;
+  std::vector<uint64_t> negative_hits;
+  std::vector<uint64_t> positive_candidates;
+  std::vector<uint64_t> negative_candidates;
+  std::vector<SignalAnchorChain> positive_chains;
+  for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
+    read_feature_signal.clear();
+    read_feature_positions.clear();
+    ssize_t feature_mapping_end_position = -1;
+    GetFeatureSignal(read_signal_batch.GetSignalAt(read_signal_index), 8 * sqrt(2), read_feature_signal, read_feature_positions);
+    read_point_cloud.clear();
+    positive_hits.clear();
+    negative_hits.clear();
+    positive_candidates.clear();
+    negative_candidates.clear();
+    positive_chains.clear();
+    reference_spatial_index.GeneratePointCloud(read_feature_signal.data(), read_feature_signal.size(), read_signal_point_cloud_step_size, read_point_cloud);
+    //reference_spatial_index.GenerateCandidates(read_point_cloud, &positive_hits, &negative_hits, &positive_candidates, &negative_candidates);
+    reference_spatial_index.GenerateChains(read_point_cloud, read_signal_point_cloud_step_size, 0.1, num_reference_sequences, reference_feature_signals, positive_chains);
+    std::cerr << "Max chaining score: " << positive_chains[0].score << ", signal_index: " << positive_chains[0].start_position << ", anchor target start postion: " << positive_chains[0].end_position << ", rough end position on ref: " << reference_feature_positions[positive_chains[0].start_position][positive_chains[0].end_position] << ".\n";
+    std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(positive_chains[0].start_position) << ", length: " << reference_feature_signals[positive_chains[0].start_position].size() << "\n";
+    std::cerr << "\n";
+  }
+  std::cerr << "Finished mapping in " << GetRealTime() - real_start_time << ", # reads: " << num_loaded_read_signals << "\n";
+  read_signal_batch.FinalizeLoading();
+  reference_sequence_batch.FinalizeLoading();
+  reference_signal_batch.FinalizeLoading();
+}
+
+void Sigmap::DTWAlign() {
+  SignalBatch read_signal_batch;
+  read_signal_batch.InitializeLoading(signal_directory_);
+  size_t num_loaded_read_signals = read_signal_batch.LoadAllReadSignals();
+  double real_normalization_start_time = GetRealTime();
+  for (size_t read_index = 0; read_index < num_loaded_read_signals; ++read_index) {
+  read_signal_batch.NormalizeSignalAt(read_index);
+  }
+  std::cerr << "Normalize " << num_loaded_read_signals << " read signals in " << GetRealTime() - real_normalization_start_time << "s.\n";
+  PoreModel pore_model;
+  pore_model.Load(pore_model_file_path_);
+  SequenceBatch reference;
+  reference.InitializeLoading(reference_file_path_);
+  uint32_t num_reference_sequences = reference.LoadAllSequences();
+  SignalBatch reference_signal_batch;
+  reference_signal_batch.ConvertSequencesToSignals(reference, pore_model, num_reference_sequences);
+  real_normalization_start_time = GetRealTime();
+  for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
+    reference_signal_batch.NormalizeSignalAt(reference_signal_index);
+  }
+  std::cerr << "Normalize " << num_reference_sequences << " reference signals in " << GetRealTime() - real_normalization_start_time << "s.\n";
+  double real_start_time = GetRealTime();
+  for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
+    for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
+      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", reference name: " << reference.GetSequenceNameAt(reference_signal_index) << "\n";
+      sDTW(reference_signal_batch.GetSignalAt(reference_signal_index), read_signal_batch.GetSignalAt(read_signal_index));
+    }
+    std::cerr << num_loaded_read_signals << "\n";
+  }
+  std::cerr << "Finished mapping in " << GetRealTime() - real_start_time << ", # reads: " << num_loaded_read_signals << "\n";
+  read_signal_batch.FinalizeLoading();
+  reference.FinalizeLoading();
+  reference_signal_batch.FinalizeLoading();
+}
+
+void Sigmap::CWTAlign() {
+  SignalBatch read_signal_batch;
+  read_signal_batch.InitializeLoading(signal_directory_);
+  size_t num_loaded_read_signals = read_signal_batch.LoadAllReadSignals();
+  PoreModel pore_model;
+  pore_model.Load(pore_model_file_path_);
+  SequenceBatch reference_sequence_batch;
+  reference_sequence_batch.InitializeLoading(reference_file_path_);
+  uint32_t num_reference_sequences = reference_sequence_batch.LoadAllSequences();
+  SignalBatch reference_signal_batch;
+  reference_signal_batch.ConvertSequencesToSignals(reference_sequence_batch, pore_model, num_reference_sequences);
+  std::vector<std::vector<float> > reference_feature_signals;
+  std::vector<std::vector<size_t> > reference_feature_positions;
+  for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
+    reference_feature_signals.push_back(std::vector<float>());
+    reference_feature_positions.push_back(std::vector<size_t>());
+    GetFeatureSignal(reference_signal_batch.GetSignalAt(reference_signal_index), 1.25, reference_feature_signals.back(), reference_feature_positions.back());
+  }
+  double real_start_time = GetRealTime();
   std::vector<float> read_feature_signal;
   std::vector<size_t> read_feature_positions;
   for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
     read_feature_signal.clear();
     read_feature_positions.clear();
     ssize_t feature_mapping_end_position = -1;
-    GetFeatureSignal(read_signal_batch.GetSignalAt(read_signal_index), 8 * sqrt(2), read_feature_signal, read_feature_positions);
+    GetFeatureSignal(read_signal_batch.GetSignalAt(read_signal_index), 10, read_feature_signal, read_feature_positions);
     for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
-      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", reference name: " << reference.GetSequenceNameAt(reference_signal_index) << "\n";
+      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(reference_signal_index) << "\n";
       float dtw_distance = sDTW(reference_feature_signals[reference_signal_index].data(), reference_feature_signals[reference_signal_index].size(), read_feature_signal.data(), read_feature_signal.size(), feature_mapping_end_position);
       std::cerr << "DTW distance: " << dtw_distance << ", feature_mapping_end_position: " << feature_mapping_end_position << ", rough mapping end postion: " << reference_feature_positions[reference_signal_index][feature_mapping_end_position] << ".\n";
     }
     std::cerr << "\n";
   }
+  std::cerr << "Finished mapping in " << GetRealTime() - real_start_time << ", # reads: " << num_loaded_read_signals << "\n";
   read_signal_batch.FinalizeLoading();
-  reference.FinalizeLoading();
+  reference_sequence_batch.FinalizeLoading();
+  reference_signal_batch.FinalizeLoading();
+}
+
+void Sigmap::ConstructIndex() {
+  PoreModel pore_model;
+  pore_model.Load(pore_model_file_path_);
+  SequenceBatch reference_sequence_batch;
+  reference_sequence_batch.InitializeLoading(reference_file_path_);
+  uint32_t num_reference_sequences = reference_sequence_batch.LoadAllSequences();
+  SignalBatch reference_signal_batch;
+  reference_signal_batch.ConvertSequencesToSignals(reference_sequence_batch, pore_model, num_reference_sequences);
+  std::vector<std::vector<float> > reference_feature_signals;
+  std::vector<std::vector<size_t> > reference_feature_positions;
+  for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
+    reference_feature_signals.push_back(std::vector<float>());
+    reference_feature_positions.push_back(std::vector<size_t>());
+    GetFeatureSignal(reference_signal_batch.GetSignalAt(reference_signal_index), sqrt(2), reference_feature_signals.back(), reference_feature_positions.back());
+  }
+  SpatialIndex spatial_index(dimension_, max_leaf_, 1, output_file_path_);
+  spatial_index.Construct(reference_feature_signals.size(), reference_feature_signals);
+  spatial_index.Save();
   reference_signal_batch.FinalizeLoading();
 }
 
 void Sigmap::GetFeatureSignal(const Signal &signal, float scale0, std::vector<float> &feature_signal, std::vector<size_t> &feature_positions) {
+  //SaveVectorToFile(signal.signal, signal.signal_length, output_file_path_ + "_" + std::string(signal.name) + ".raw");
   std::vector<float> buffer;
   GetNormalizedSignal(signal.signal, signal.signal_length, buffer);
+  //SaveVectorToFile(buffer.data(), buffer.size(), output_file_path_ + "_" + std::string(signal.name) + ".normalized");
   GetCWTSignal(buffer.data(), buffer.size(), scale0, feature_signal);
+  //SaveVectorToFile(feature_signal.data(), feature_signal.size(), output_file_path_ + "_" + std::string(signal.name) + ".cwt");
   buffer.clear();
-  float MAD = GetNormalizedSignal(feature_signal.data(), feature_signal.size(), buffer);
+  //float MAD = GetNormalizedSignal(feature_signal.data(), feature_signal.size(), buffer);
+  float MAD = GetZscoreNormalizedSignal(feature_signal.data(), feature_signal.size(), buffer);
+  //SaveVectorToFile(buffer.data(), buffer.size(), output_file_path_ + "_" + std::string(signal.name) + ".normalized_cwt");
+  //buffer.swap(feature_signal);
   feature_signal.clear();
-  GetPeaks(buffer.data(), buffer.size(), MAD / 8, feature_signal, feature_positions);
+  GetPeaks(buffer.data(), buffer.size(), MAD / 4, feature_signal, feature_positions);
+  //SaveVectorToFile(feature_signal.data(), feature_signal.size(), output_file_path_ + "_" + std::string(signal.name) + ".peaks");
+  //SaveVectorToFile(feature_positions.data(), feature_positions.size(), output_file_path_ + "_" + std::string(signal.name) + ".peak_positions");
 }
 
 void Sigmap::FAST5ToText() {
@@ -93,8 +206,6 @@ void Sigmap::FAST5ToText() {
 
 float Sigmap::sDTW(const float *target_signal, size_t target_length, const float *query_signal, size_t query_length, ssize_t &mapping_end_position) {
   double real_start_time = GetRealTime();
-  //size_t query_length = query_signal.signal_length;
-  //size_t target_length = target_signal.signal_length;
   float min_dtw_distance = std::numeric_limits<float>::max();
   mapping_end_position = -1;
   std::vector<float> previous_row(query_length + 1, std::numeric_limits<float>::max());
@@ -145,7 +256,9 @@ float Sigmap::sDTW(const Signal &target_signal, const Signal &query_signal) {
 void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   cxxopts::Options options("sigmap", "Map ONT raw signal data");
   options.add_options("Indexing")
-    ("i,build-index", "Build reference index");
+    ("i,build-index", "Build spatial index for reference")
+    ("d,dimension", "Dimension of spatial index", cxxopts::value<int>(), "INT")
+    ("l,max-leaf", "Max leaf of spatial index", cxxopts::value<int>(), "INT");
   //options.add_options("Signal data indexing")
   //  ("build-sig-index", "Build index for signal data directory");
   options.add_options("Mapping")
@@ -170,6 +283,15 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   }
 
   if (result.count("i")) {
+    int dimension = 5;
+    if (result.count("d")) {
+      dimension = result["dimension"].as<int>();
+    }
+    int max_leaf = 10;
+    if (result.count("l")) {
+      max_leaf = result["max-leaf"].as<int>();
+    }
+    std::cerr << "Dimension: " << dimension << ", max leaf: " << max_leaf << "\n";
     std::string reference_file_path;
     if (result.count("r")) {
       reference_file_path = result["ref"].as<std::string>();
@@ -191,6 +313,8 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
       sigmap::ExitWithMessage("No output file specified!");
     }
     std::cerr << "Output file: " << output_file_path << "\n";
+    Sigmap sigmap_for_indexing(dimension, max_leaf, reference_file_path, pore_model_file_path, output_file_path);
+    sigmap_for_indexing.ConstructIndex();
   } else if (result.count("m")) {
     std::cerr << "Number of threads: " << num_threads << "\n";
     std::string reference_file_path;
@@ -228,8 +352,10 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
       sigmap::ExitWithMessage("No output file specified!");
     }
     std::cerr << "Output file: " << output_file_path << "\n";
-    Sigmap sigmap_for_mapping(reference_file_path, pore_model_file_path, signal_dir, output_file_path);
-    sigmap_for_mapping.Map();
+    Sigmap sigmap_for_mapping(reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
+    //sigmap_for_mapping.CWTAlign();
+    sigmap_for_mapping.DTWAlign();
+    //sigmap_for_mapping.Map();
     //sigmap_for_mapping.FAST5ToText();
   } else if (result.count("h")) {
     std::cerr << options.help({"", "Indexing", "Mapping", "Input", "Output"});
