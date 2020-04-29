@@ -26,7 +26,9 @@ class Sigmap {
   void CWTAlign();
   void ConstructIndex();
   void GetFeatureSignal(const Signal &signal, float scale0, std::vector<float> &feature_signal, std::vector<size_t> &feature_positions);
+  void GetReadFeatureSignal(const Signal &signal, float scale0, std::vector<float> &feature_signal, std::vector<size_t> &feature_positions);
   void FAST5ToText();
+  void EventsToText();
   float sDTW(const Signal &target_signal, const Signal &query_signal);
   float sDTW(const float *target_signal, size_t target_length, const float *query_signal, size_t query_length, ssize_t &mapping_end_position);
  protected:
