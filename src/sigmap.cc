@@ -41,7 +41,8 @@ void Sigmap::Map() {
   reference_spatial_index.Load();
   // Map each reads
   double real_start_time = GetRealTime();
-  int read_signal_point_cloud_step_size = 8;
+  int read_signal_point_cloud_step_size = 1;
+  float search_radius = 0.3;
   std::vector<float> read_feature_signal;
   std::vector<size_t> read_feature_positions;
   std::vector<std::vector<float> > read_point_cloud;
@@ -63,7 +64,7 @@ void Sigmap::Map() {
     positive_chains.clear();
     reference_spatial_index.GeneratePointCloud(read_feature_signal.data(), read_feature_signal.size(), read_signal_point_cloud_step_size, read_point_cloud);
     //reference_spatial_index.GenerateCandidates(read_point_cloud, &positive_hits, &negative_hits, &positive_candidates, &negative_candidates);
-    reference_spatial_index.GenerateChains(read_point_cloud, read_signal_point_cloud_step_size, 0.2, num_reference_sequences, reference_feature_signals, positive_chains);
+    reference_spatial_index.GenerateChains(read_point_cloud, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, reference_feature_signals, positive_chains);
     std::cerr << "Max chaining score: " << positive_chains[0].score << ", signal_index: " << positive_chains[0].start_position << ", anchor target start postion: " << positive_chains[0].end_position << ", rough end position on ref: " << reference_feature_positions[positive_chains[0].start_position][positive_chains[0].end_position] << ".\n";
     std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(positive_chains[0].start_position) << ", length: " << reference_feature_signals[positive_chains[0].start_position].size() << "\n";
     std::cerr << "\n";
@@ -216,17 +217,39 @@ void Sigmap::GetReadFeatureSignal(const Signal &signal, float scale0, std::vecto
   //GetPeaks(buffer.data(), buffer.size(), MAD / 4, feature_signal, feature_positions);
   ////SaveVectorToFile(feature_signal.data(), feature_signal.size(), output_file_path_ + "_" + std::string(signal.name) + ".peaks");
   ////SaveVectorToFile(feature_positions.data(), feature_positions.size(), output_file_path_ + "_" + std::string(signal.name) + ".peak_positions");
+
   std::vector<float> buffer;
   std::vector<Event> events;
   const DetectorArgs ed_params = event_detection_defaults;
   detect_events(signal.signal, signal.signal_length, ed_params, events);
+  //for (size_t ei = 0; ei < events.size(); ++ei) {
+  //  buffer.emplace_back(events[ei].mean);
+  //}
+  //GetNormalizedSignal(buffer.data(), buffer.size(), feature_signal);
+  //for (size_t i = 0; i < buffer.size(); ++i) {
+  //  feature_positions.emplace_back(i);
+  //}
+  feature_signal.clear();
   for (size_t ei = 0; ei < events.size(); ++ei) {
-    buffer.emplace_back(events[ei].mean);
+    feature_signal.emplace_back(events[ei].mean);
   }
-  GetNormalizedSignal(buffer.data(), buffer.size(), feature_signal);
-  for (size_t i = 0; i < buffer.size(); ++i) {
+  GetNormalizedSignal(feature_signal.data(), feature_signal.size(), buffer);
+  feature_signal.clear();
+  for (size_t i = 0; i < buffer.size(); i += 2) {
+    feature_signal.emplace_back(buffer[i]);
     feature_positions.emplace_back(i);
   }
+
+  //std::vector<float> buffer;
+  //GetNormalizedSignal(signal.signal, signal.signal_length, buffer);
+  //std::vector<Event> events;
+  //const DetectorArgs ed_params = event_detection_defaults;
+  //detect_events(buffer.data(), buffer.size(), ed_params, events);
+  //feature_signal.clear();
+  //for (size_t i = 0; i < buffer.size(); i += 2) {
+  //  feature_signal.emplace_back(buffer[i]);
+  //  feature_positions.emplace_back(i);
+  //}
 }
 
 void Sigmap::EventsToText() {
@@ -241,10 +264,17 @@ void Sigmap::EventsToText() {
     const Signal &read_signal = read_signal_batch.GetSignalAt(i);
     events.clear();
     detect_events(read_signal.signal, read_signal.signal_length, ed_params, events);
+    std::vector<float> buffer;
+    std::vector<float> normalized_events;
+    for (size_t ei = 0; ei < events.size(); ++ei) {
+      buffer.emplace_back(events[ei].mean);
+    }
+    GetNormalizedSignal(buffer.data(), buffer.size(), normalized_events);
     //fprintf(output_file, "%s\t", read_signal.name);
     for (size_t ei = 0; ei < events.size(); ++ei) {
-      fprintf(output_file, "%f\t%f\t%lu\t%lu\n", events[ei].mean, events[ei].stdv, events[ei].start, events[ei].length);
+      fprintf(output_file, "%f\n", normalized_events[ei]);
     }
+    //fprintf(output_file, "%f\n", normalized_events[events.size() - 1]);
   }
   fclose(output_file);
   read_signal_batch.FinalizeLoading();
@@ -417,9 +447,9 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
     }
     std::cerr << "Output file: " << output_file_path << "\n";
     Sigmap sigmap_for_mapping(reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
-    sigmap_for_mapping.CWTAlign();
+    //sigmap_for_mapping.CWTAlign();
     //sigmap_for_mapping.DTWAlign();
-    //sigmap_for_mapping.Map();
+    sigmap_for_mapping.Map();
     //sigmap_for_mapping.FAST5ToText();
     //sigmap_for_mapping.EventsToText();
   } else if (result.count("h")) {

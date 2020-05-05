@@ -1,5 +1,5 @@
-#ifndef INDEX_H_
-#define INDEX_H_
+#ifndef SPATIALINDEX_H_
+#define SPATIALINDEX_H_
 
 #include <string>
 #include <vector>
