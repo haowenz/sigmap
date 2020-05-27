@@ -372,7 +372,11 @@ void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_
       chaining_predecessors.emplace_back(anchor_index);
       int32_t current_anchor_target_position = anchors_on_diff_signals[target_signal_index][anchor_index].target_position;
       int32_t current_anchor_query_position = anchors_on_diff_signals[target_signal_index][anchor_index].query_position;
-      for (size_t previous_anchor_index = 0; previous_anchor_index < anchor_index; ++previous_anchor_index) {
+      size_t previous_anchor_index = 0;
+      if (anchor_index > 50) {
+        previous_anchor_index = anchor_index - 50;
+      }
+      for (; previous_anchor_index < anchor_index; ++previous_anchor_index) {
         int32_t previous_anchor_target_position = anchors_on_diff_signals[target_signal_index][previous_anchor_index].target_position;
         int32_t previous_anchor_query_position = anchors_on_diff_signals[target_signal_index][previous_anchor_index].query_position;
         int32_t target_position_diff = current_anchor_target_position - previous_anchor_target_position;
