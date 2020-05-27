@@ -329,23 +329,7 @@ struct Event {
   size_t length;
   float mean;
   float stdv;
-  //int pos;
-  //int state;
 };
-
-//struct EventTable {
-//  size_t n;
-//  size_t start;
-//  size_t end;
-//  Event *event;
-//};
-
-//struct RawTable {
-//  size_t n;
-//  size_t start;
-//  size_t end;
-//  float *raw;
-//};
 
 struct DetectorArgs {
   size_t window_length1;
@@ -384,117 +368,64 @@ struct Detector {
   bool valid_peak;
 };
 
-/**
- *   Compute cumulative sum and sum of squares for a vector of data
- *
- *   Element i  sum (sumsq) is the sum (sum of squares) up to but
- *   excluding element i of the inputy data.
- *
- *   @param data      double[d_length]   Data to be summed over (in)
- *   @param sum       double[d_length + 1]   Vector to store sum (out)
- *   @param sumsq     double[d_length + 1]   Vector to store sum of squares (out)
- *   @param d_length                     Length of data vector
- **/
-static inline void compute_sum_sumsq(const float *data, size_t d_length, std::vector<float> &sum, std::vector<float> &sumsq) {
-  //RETURN_NULL_IF(NULL == data, );
-  //RETURN_NULL_IF(NULL == sum, );
-  //RETURN_NULL_IF(NULL == sumsq, );
-  assert(d_length > 0);
-  //sum[0] = 0.0f;
-  //sumsq[0] = 0.0f;
-  sum.emplace_back(0.0f);
-  sumsq.emplace_back(0.0f);
-  for (size_t i = 0; i < d_length; ++i) {
-    //sum[i + 1] = sum[i] + data[i];
-    //sumsq[i + 1] = sumsq[i] + data[i] * data[i];
-    sum.emplace_back(sum[i] + data[i]);
-    sumsq.emplace_back(sumsq[i] + data[i] * data[i]);
+static inline void ComputePrefixSumAndPrefixSumSquares(const float *data, size_t data_length, std::vector<float> &prefix_sum, std::vector<float> &prefix_sum_square) {
+  assert(data_length > 0);
+  prefix_sum.emplace_back(0.0f);
+  prefix_sum_square.emplace_back(0.0f);
+  for (size_t i = 0; i < data_length; ++i) {
+    prefix_sum.emplace_back(prefix_sum[i] + data[i]);
+    prefix_sum_square.emplace_back(prefix_sum_square[i] + data[i] * data[i]);
   }
 }
 
-/**
- *   Compute windowed t-statistic from summary information
- *
- *   @param sum       double[d_length]  Cumulative sums of data (in)
- *   @param sumsq     double[d_length]  Cumulative sum of squares of data (in)
- *   @param d_length                    Length of data vector
- *   @param w_length                    Window length to calculate t-statistic over
- *
- *   @returns float array containing tstats.  Returns NULL on error
- **/
-static inline void compute_tstat(const float *sum, const float *sumsq, size_t d_length, size_t w_length, std::vector<float> &tstat) {
-  assert(d_length > 0);
-  assert(w_length > 0);
-  //RETURN_NULL_IF(NULL == sum, NULL);
-  //RETURN_NULL_IF(NULL == sumsq, NULL);
-
-  //float *tstat = calloc(d_length, sizeof(float));
-  tstat.resize(d_length);
-  //RETURN_NULL_IF(NULL == tstat, NULL);
-
+static inline void ComputeTStat(const float *prefix_sum, const float *prefix_sum_square, size_t signal_length, size_t window_length, std::vector<float> &tstat) {
   const float eta = FLT_MIN;
-  const float w_lengthf = (float)w_length;
-
   // Quick return:
-  //   t-test not defined for number of points less than 2
-  //   need at least as many points as twice the window length
-  if (d_length < 2 * w_length || w_length < 2) {
-    for (size_t i = 0; i < d_length; ++i) {
-      //tstat[i] = 0.0f;
+  // t-test not defined for number of points less than 2
+  // need at least as many points as twice the window length
+  if (signal_length < 2 * window_length || window_length < 2) {
+    for (size_t i = 0; i < signal_length; ++i) {
       tstat.emplace_back(0.0f);
     }
     return;
   }
   // fudge boundaries
-  for (size_t i = 0; i < w_length; ++i) {
-    tstat[i] = 0;
-    tstat[d_length - i - 1] = 0;
+  for (size_t i = 0; i < window_length; ++i) {
+    tstat.emplace_back(0.0f);
   }
-
   // get to work on the rest
-  for (size_t i = w_length; i <= d_length - w_length; ++i) {
-    float sum1 = sum[i];
-    float sumsq1 = sumsq[i];
-    if (i > w_length) {
-      sum1 -= sum[i - w_length];
-      sumsq1 -= sumsq[i - w_length];
+  for (size_t i = window_length; i <= signal_length - window_length; ++i) {
+    float sum1 = prefix_sum[i];
+    float sumsq1 = prefix_sum_square[i];
+    if (i > window_length) {
+      sum1 -= prefix_sum[i - window_length];
+      sumsq1 -= prefix_sum_square[i - window_length];
     }
-    float sum2 = (float)(sum[i + w_length] - sum[i]);
-    float sumsq2 = (float)(sumsq[i + w_length] - sumsq[i]);
-    float mean1 = sum1 / w_lengthf;
-    float mean2 = sum2 / w_lengthf;
-    float combined_var = sumsq1 / w_lengthf - mean1 * mean1 + sumsq2 / w_lengthf - mean2 * mean2;
-
+    float sum2 = prefix_sum[i + window_length] - prefix_sum[i];
+    float sumsq2 = prefix_sum_square[i + window_length] - prefix_sum_square[i];
+    float mean1 = sum1 / window_length;
+    float mean2 = sum2 / window_length;
+    float combined_var = sumsq1 / window_length - mean1 * mean1 + sumsq2 / window_length - mean2 * mean2;
     // Prevent problem due to very small variances
     combined_var = fmaxf(combined_var, eta);
-
     //t-stat
     //  Formula is a simplified version of Student's t-statistic for the
     //  special case where there are two samples of equal size with
     //  differing variance
     const float delta_mean = mean2 - mean1;
-    tstat[i] = fabs(delta_mean) / sqrt(combined_var / w_lengthf);
+    tstat.emplace_back(fabs(delta_mean) / sqrt(combined_var / window_length));
+  }
+  // fudge boundaries
+  for (size_t i = 0; i < window_length; ++i) {
+    tstat.emplace_back(0.0f);
   }
 }
 
-/**
- *
- *   @returns array of length nsample whose elements contain peak positions
- *   Remaining elements are padded by zeros.
- **/
-static inline void short_long_peak_detector(Detector *short_detector, Detector *long_detector, const float peak_height, std::vector<size_t> &peaks) {
+static inline void GeneratePeaksUsingMultiWindows(Detector *short_detector, Detector *long_detector, const float peak_height, std::vector<size_t> &peaks) {
   assert(short_detector->signal_length == long_detector->signal_length);
-  //RETURN_NULL_IF(NULL == short_detector->signal, NULL);
-  //RETURN_NULL_IF(NULL == long_detector->signal, NULL);
-
   const size_t ndetector = 2;
   Detector *detectors[ndetector] = {short_detector, long_detector};
-
-  peaks.assign(short_detector->signal_length, 0);
-  //size_t *peaks = calloc(short_detector->signal_length, sizeof(size_t));
-  //RETURN_NULL_IF(NULL == peaks, NULL);
-
-  size_t peak_count = 0;
+  peaks.reserve(short_detector->signal_length);
   for (size_t i = 0; i < short_detector->signal_length; i++) {
     for (size_t k = 0; k < ndetector; k++) {
       Detector *detector = detectors[k];
@@ -502,15 +433,13 @@ static inline void short_long_peak_detector(Detector *short_detector, Detector *
       if (detector->masked_to >= i) {
         continue;
       }
-
       float current_value = detector->signal[i];
-
       if (detector->peak_pos == detector->DEF_PEAK_POS) {
         //CASE 1: We've not yet recorded a maximum
         if (current_value < detector->peak_value) {
           //Either record a deeper minimum...
           detector->peak_value = current_value;
-        } else if (current_value - detector->peak_value > peak_height) {
+        } else if (current_value - detector->peak_value > peak_height) { // TODO(Haowen): this might cause overflow, need to fix this
           // ...or we've seen a qualifying maximum
           detector->peak_value = current_value;
           detector->peak_pos = i;
@@ -539,9 +468,7 @@ static inline void short_long_peak_detector(Detector *short_detector, Detector *
         //Finally, check the distance if this is a good peak
         if (detector->valid_peak && (i - detector->peak_pos) > detector->window_length / 2) {
           //Emit the boundary and reset
-          //peaks.emplace_back(detector->peak_pos);
-          peaks[peak_count] = detector->peak_pos;
-          peak_count++;
+          peaks.emplace_back(detector->peak_pos);
           detector->peak_pos = detector->DEF_PEAK_POS;
           detector->peak_value = current_value;
           detector->valid_peak = false;
@@ -549,95 +476,50 @@ static inline void short_long_peak_detector(Detector *short_detector, Detector *
       }
     }
   }
-  //return peaks;
 }
 
-/**  Create an event given boundaries
- *
- *   Note: Bounds are CADLAG (i.e. lower bound is contained in the interval but
- *   the upper bound is not).
- *
- *  @param start Index of lower bound
- *  @param end Index of upper bound
- *  @param sums
- *  @param sumsqs
- *  @param nsample  Total number of samples in read
- *
- *  @returns An initialised event.  A 'null' event is returned on error.
- **/
-static inline Event create_event(size_t start, size_t end, const float *sums, const float *sumsqs, size_t nsample) {
-  assert(start < nsample);
-  assert(end <= nsample);
-
-  Event event = { 0 };
-  //event.pos = -1;
-  //event.state = -1;
-  //RETURN_NULL_IF(NULL == sums, event);
-  //RETURN_NULL_IF(NULL == sumsqs, event);
-
-  event.start = (uint64_t)start;
-  event.length = (float)(end - start);
-  event.mean = (float)(sums[end] - sums[start]) / event.length;
-  float deltasqr = (sumsqs[end] - sumsqs[start]);
+static inline Event CreateEvent(size_t start, size_t end, const float *prefix_sum, const float *prefix_sum_square, size_t signal_length) {
+  assert(start < signal_length);
+  assert(end <= signal_length);
+  Event event;
+  event.start = start;
+  event.length = end - start;
+  event.mean = (prefix_sum[end] - prefix_sum[start]) / event.length;
+  float deltasqr = prefix_sum_square[end] - prefix_sum_square[start];
   float var = deltasqr / event.length - event.mean * event.mean;
   event.stdv = sqrtf(fmaxf(var, 0.0f));
-
   return event;
 }
 
-static inline void create_events(const size_t *peaks, const float *sums, const float *sumsqs, size_t nsample, std::vector<Event> &events) {
-  //EventTable et = { 0 };
-  //RETURN_NULL_IF(NULL == sums, et);
-  //RETURN_NULL_IF(NULL == sumsqs, et);
-  //RETURN_NULL_IF(NULL == peaks, et);
-
+static inline void CreateEvents(const size_t *peaks, uint32_t peak_size, const float *prefix_sum, const float *prefix_sum_square, size_t signal_length, std::vector<Event> &events) {
   // Count number of events found
-  size_t n = 1;
-  for (size_t i = 1; i < nsample; ++i) {
-    if (peaks[i] > 0 && peaks[i] < nsample) {
-      n++;
+  size_t num_events = 1;
+  for (size_t i = 1; i < peak_size; ++i) {
+    if (peaks[i] > 0 && peaks[i] < signal_length) {
+      num_events++;
     }
   }
-
-  //et.event = calloc(n, sizeof(Event));
-  ////RETURN_NULL_IF(NULL == et.event, et);
-
-  //et.n = n;
-  //et.end = et.n;
-
-
   // First event -- starts at zero
-  //et.event[0] = create_event(0, peaks[0], sums, sumsqs, nsample);
-  events.emplace_back(create_event(0, peaks[0], sums, sumsqs, nsample));
+  events.emplace_back(CreateEvent(0, peaks[0], prefix_sum, prefix_sum_square, signal_length));
   // Other events -- peak[i-1] -> peak[i]
-  for (size_t ev = 1 ; ev < n - 1 ; ev++) {
-    //et.event[ev] = create_event(peaks[ev - 1], peaks[ev], sums, sumsqs, nsample);
-    events.emplace_back(create_event(peaks[ev - 1], peaks[ev], sums, sumsqs, nsample));
+  for (size_t pi = 1 ; pi < num_events - 1 ; pi++) {
+    events.emplace_back(CreateEvent(peaks[pi - 1], peaks[pi], prefix_sum, prefix_sum_square, signal_length));
   }
-  // Last event -- ends at nsample
-  //et.event[n - 1] = create_event(peaks[n - 2], nsample, sums, sumsqs, nsample);
-  events.emplace_back(create_event(peaks[n - 2], nsample, sums, sumsqs, nsample));
-
-  //return et;
+  // Last event -- ends at signal_length
+  events.emplace_back(CreateEvent(peaks[num_events - 2], signal_length, prefix_sum, prefix_sum_square, signal_length));
 }
 
-static inline void detect_events(const float *signal, size_t signal_length, const DetectorArgs &edparam, std::vector<Event> &events) {
+static inline void DetectEvents(const float *signal, size_t signal_length, const DetectorArgs &edparam, std::vector<float> &prefix_sum, std::vector<float> &prefix_sum_square, std::vector<float> &tstat1, std::vector<float> &tstat2, std::vector<size_t> &peaks, std::vector<Event> &events) {
+  //std::vector<float> prefix_sum;
+  prefix_sum.reserve(signal_length + 1);
+  //std::vector<float> prefix_sum_square;
+  prefix_sum_square.reserve(signal_length + 1);
+  ComputePrefixSumAndPrefixSumSquares(signal, signal_length, prefix_sum, prefix_sum_square);
 
-  //EventTable et = { 0 };
-  //RETURN_NULL_IF(NULL == rt.raw, et);
-
-  std::vector<float> sums;// = calloc(signal.signal_length + 1, sizeof(double));
-  sums.reserve(signal_length + 1);
-  std::vector<float> sumsqs;// = calloc(signal_length + 1, sizeof(double));
-  sumsqs.reserve(signal_length + 1);
-
-  compute_sum_sumsq(signal, signal_length, sums, sumsqs);
-  std::vector<float> tstat1;
-  std::vector<float> tstat2;
-  compute_tstat(sums.data(), sumsqs.data(), signal_length, edparam.window_length1, tstat1);
-  compute_tstat(sums.data(), sumsqs.data(), signal_length, edparam.window_length2, tstat2);
-  //float *tstat1 = compute_tstat(sums, sumsqs, rt.n, edparam.window_length1);
-  //float *tstat2 = compute_tstat(sums, sumsqs, rt.n, edparam.window_length2);
+  //std::vector<float> tstat1;
+  //std::vector<float> tstat2;
+  ComputeTStat(prefix_sum.data(), prefix_sum_square.data(), signal_length, edparam.window_length1, tstat1);
+  ComputeTStat(prefix_sum.data(), prefix_sum_square.data(), signal_length, edparam.window_length2, tstat2);
 
   Detector short_detector = {
     .DEF_PEAK_POS = -1,
@@ -665,21 +547,10 @@ static inline void detect_events(const float *signal, size_t signal_length, cons
     .valid_peak = false
   };
 
-  //size_t *peaks = short_long_peak_detector(&short_detector, &long_detector, edparam.peak_height);
-  std::vector<size_t> peaks;
-  short_long_peak_detector(&short_detector, &long_detector, edparam.peak_height, peaks);
-
-  create_events(peaks.data(), sums.data(), sumsqs.data(), signal_length, events);
+  //std::vector<size_t> peaks;
+  GeneratePeaksUsingMultiWindows(&short_detector, &long_detector, edparam.peak_height, peaks);
+  CreateEvents(peaks.data(), peaks.size(), prefix_sum.data(), prefix_sum_square.data(), signal_length, events);
   std::cerr << "Detected " << events.size() << " events.\n";
-  //et = create_events(peaks, sums, sumsqs, rt.n);
-
-  //free(peaks);
-  //free(tstat2);
-  //free(tstat1);
-  //free(sumsqs);
-  //free(sums);
-
-  //return et;
 }
 } // namespace sigmap
 
