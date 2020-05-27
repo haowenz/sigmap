@@ -47,6 +47,9 @@ class SignalBatch {
   const char* GetSignalNameAt(size_t signal_index) const {
     return signals_[signal_index].name;
   }
+  size_t GetSignalLengthAt(size_t signal_index) const {
+    return signals_[signal_index].signal_length;
+  }
 
  protected:
   std::string signal_directory_;
