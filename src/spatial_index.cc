@@ -361,8 +361,8 @@ void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_
   }
   // Chaining DP done on each individual target signal
   float max_chaining_score = std::numeric_limits<float>::min();
-  ssize_t max_chain_end_anchor_index = -1;
-  ssize_t max_chain_target_signal_index = -1;
+  size_t max_chain_end_anchor_index = 0;
+  size_t max_chain_target_signal_index = 0;
   for (size_t target_signal_index = 0; target_signal_index < num_signals; ++target_signal_index) {
     std::vector<float> chaining_scores;
     std::vector<float> chaining_predecessors;

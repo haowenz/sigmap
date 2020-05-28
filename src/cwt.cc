@@ -1572,22 +1572,19 @@ static void wave_function(int nk, cwt_type dt,int mother, cwt_type param, cwt_ty
     fourier_factor = (4.0 * pi) / (2.0 * m + 1.0);
     *period1 = scale1 * fourier_factor;
     *coi1 = fourier_factor * sqrt(2.0);
-  }
-  else if (mother == 2) {
+  } else if (mother == 2) {
     if (param < 0.0) {
       param = 2.0;
     }
     m = (int)param;
     if (m % 2 == 0) {
       re = 1;
-    }
-    else {
+    } else {
       re = 0;
     }
     if (m % 4 == 0 || m % 4 == 1) {
       sign = -1;
-    }
-    else {
+    } else {
       sign = 1;
     }
     norm = sqrt(2.0 * pi * scale1 / dt) * sqrt(1.0 / cwt_gamma(m + 0.50));
@@ -1598,8 +1595,7 @@ static void wave_function(int nk, cwt_type dt,int mother, cwt_type param, cwt_ty
         daughter[k - 1].re = norm * pow(temp, (cwt_type)m) * exp(-0.50 * pow(temp, 2.0));
         daughter[k - 1].im = 0.0;
       }
-    }
-    else if (re == 0) {
+    } else if (re == 0) {
       for (k = 1; k <= nk; ++k) {
         temp = scale1 * kwave[k - 1];
         daughter[k - 1].re = 0.0;

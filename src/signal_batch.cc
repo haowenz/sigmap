@@ -81,7 +81,7 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
   //size_t read_name_length;
   char *read_name = nullptr;
   size_t signal_length;
-  float *signal;
+  float *signal_values;
   float digitisation;
   float range;
   float offset;
@@ -139,19 +139,19 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
   num_dims = H5Sget_simple_extent_dims(dataspace_id, &first_dimension_size, NULL);
   assert(num_dims == 1); // There should be 1 dimension and the size of that dimension is the signal length
   signal_length = first_dimension_size;
-  signal = (float*)calloc(signal_length, sizeof(float));
-  fast5_err = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, signal);
+  signal_values = (float*)calloc(signal_length, sizeof(float));
+  fast5_err = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, signal_values);
   if (fast5_err < 0) {
     fprintf(stderr, "Failed to load read signal data from dataset %s.\n", read_signal_dataset.c_str());
-    free(signal);
+    free(signal_values);
     goto cleanup4;
   }
   // convert to pA
   scale = range / digitisation;
   for (size_t i = 0; i < signal_length; i++) {
-    signal[i] = (signal[i] + offset) * scale;
+    signal_values[i] = (signal_values[i] + offset) * scale;
   }
-  signals_.emplace_back(Signal{read_name, digitisation, range, offset, signal_length, signal});
+  signals_.emplace_back(Signal{read_name, digitisation, range, offset, signal_length, signal_values});
 cleanup4:
   H5Sclose(dataspace_id);
 cleanup3:
@@ -162,7 +162,7 @@ cleanup3:
 void SignalBatch::NormalizeSignalAt(size_t signal_index) {
   // Should use a linear algorithm like median of medians
   // But for now let us use sort
-  std::vector<float> tmp_signal((signals_[signal_index]).signal, (signals_[signal_index]).signal + (signals_[signal_index]).signal_length);
+  std::vector<float> tmp_signal((signals_[signal_index]).signal_values, (signals_[signal_index]).signal_values + (signals_[signal_index]).signal_length);
   std::nth_element(tmp_signal.begin(), tmp_signal.begin() + tmp_signal.size() / 2, tmp_signal.end());
   float signal_median = tmp_signal[tmp_signal.size() / 2]; // This is a fake median, but should be okay for a quick implementation
   for (size_t i = 0; i < tmp_signal.size(); ++i) {
@@ -172,7 +172,7 @@ void SignalBatch::NormalizeSignalAt(size_t signal_index) {
   float MAD = tmp_signal[tmp_signal.size() / 2]; // Again, fake MAD, ok for a quick implementation
   // Now we can normalize signal
   for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
-    ((signals_[signal_index]).signal)[i] = (((signals_[signal_index]).signal)[i] - signal_median) / MAD;
+    ((signals_[signal_index]).signal_values)[i] = (((signals_[signal_index]).signal_values)[i] - signal_median) / MAD;
   }
 }
 
@@ -180,10 +180,10 @@ void SignalBatch::ConvertSequencesToSignals(const SequenceBatch &sequence_batch,
   double real_start_time = GetRealTime();
   for (size_t sequence_index = 0; sequence_index < num_sequences; ++sequence_index) {
     size_t sequence_length = sequence_batch.GetSequenceLengthAt(sequence_index);
-    float *signal = pore_model.GetLevelMeansAt(sequence_batch.GetSequenceAt(sequence_index), 0, sequence_length);
+    float *signal_values = pore_model.GetLevelMeansAt(sequence_batch.GetSequenceAt(sequence_index), 0, sequence_length);
     char *name =  (char*)calloc(1 + sequence_batch.GetSequenceNameLengthAt(sequence_index), sizeof(char));
     strcpy(name, sequence_batch.GetSequenceNameAt(sequence_index));
-    signals_.emplace_back(Signal{name, 0, 0, 0, sequence_length - pore_model.GetKmerSize() + 1, signal});
+    signals_.emplace_back(Signal{name, 0, 0, 0, sequence_length - pore_model.GetKmerSize() + 1, signal_values});
   }
   std::cerr << "Convert " << num_sequences << " sequences to signals in " << GetRealTime() - real_start_time << "s.\n";
 }

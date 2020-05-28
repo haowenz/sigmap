@@ -78,8 +78,6 @@ inline static char Uint8ToChar(const uint8_t i) {
 }
 
 inline static uint64_t GenerateSeedFromSequence(const char *sequence, size_t sequence_length, uint32_t start_position, uint32_t seed_length) {
-  //const char *sequence = GetSequenceAt(sequence_index);
-  //uint32_t sequence_length = GetSequenceLengthAt(sequence_index);
   uint64_t mask = (((uint64_t)1) << (2 * seed_length)) - 1;
   uint64_t seed = 0;
   for (uint32_t i = 0; i < seed_length; ++i) {
@@ -208,94 +206,20 @@ close_attr:
 }
 
 // For signal processing
-static float GetNormalizedSignal(const float *signal, size_t signal_length, std::vector<float> &normalized_signal) {
-  // Should use a linear algorithm like median of medians
-  // One such better algorithm can be found here: https://rcoh.me/posts/linear-time-median-finding/
-  // But for now let us use sort
-  normalized_signal.assign(signal, signal + signal_length);
-  std::nth_element(normalized_signal.begin(), normalized_signal.begin() + signal_length / 2, normalized_signal.end());
-  float signal_median = normalized_signal[signal_length / 2]; // This is a fake median, but should be okay for a quick implementation
-  for (size_t i = 0; i < signal_length; ++i) {
-    normalized_signal[i] = std::abs(normalized_signal[i] - signal_median);
-  }
-  std::nth_element(normalized_signal.begin(), normalized_signal.begin() + signal_length / 2, normalized_signal.end());
-  float MAD = normalized_signal[signal_length / 2]; // Again, fake MAD, ok for a quick implementation
-  // Now we can normalize signal
-  for (size_t i = 0; i < signal_length; ++i) {
-    normalized_signal[i] = (signal[i] - signal_median) / MAD;
-  }
-  return MAD;
-}
-
-static float GetZscoreNormalizedSignal(const float *signal, size_t signal_length, std::vector<float> &normalized_signal) {
-  // Calculate mean
-  float mean = 0;
-  for (size_t i = 0; i < signal_length; ++i) {
-    mean += signal[i];
-  }
-  mean /= signal_length;
-  // Calculate standard deviation
-  float SD = 0;
-  for (size_t i = 0; i < signal_length; ++i) {
-    SD += (signal[i] - mean) * (signal[i] - mean);
-  }
-  SD /= (signal_length - 1);
-  SD = sqrt(SD); 
-  // Now we can normalize signal
-  for (size_t i = 0; i < signal_length; ++i) {
-    normalized_signal.emplace_back((signal[i] - mean) / SD);
-  }
-  return SD;
-}
-
-static void GetSignalMinAndMax(const float *signal, size_t signal_length, float &min, float &max) {
-  min = signal[0];
-  max = signal[0];
+static inline void GetSignalMinAndMax(const float *signal_values, size_t signal_length, float &min, float &max) {
+  min = signal_values[0];
+  max = signal_values[0];
   for (size_t position = 0; position < signal_length; ++position) {
-    if (signal[position] < min) {
-      min = signal[position];
+    if (signal_values[position] < min) {
+      min = signal_values[position];
     }
-    if (signal[position] > max) {
-      max = signal[position];
-    }
-  }
-}
-
-static void GetCWTSignal(const float *signal, size_t signal_length, float scale0, std::vector<float> &cwt_signal) {
-  char wave[] = "dog";
-  char type[] = "pow";
-  double param = 2.0;
-  double dt = 1;
-  double dj = 1; // Separation bewteen scales.
-  int J = 1;
-  int N = signal_length;
-  cwt_object wt = cwt_init(wave, param, N, dt, J);
-  setCWTScales(wt, scale0, dj, type, 2.0);
-  cwt(wt, signal);
-  for (size_t i = 0; i < signal_length; ++i) {
-    cwt_signal.push_back(wt->output[i].re); 
-  }
-  //cwt_summary(wt);
-  cwt_free(wt);
-}
-
-static void GetPeaks(const float *signal, size_t signal_length, float selective, std::vector<float> &peaks, std::vector<size_t> &peak_positions) {
-  float previous_valley = signal[0];
-  float previous_peak = signal[0];
-  for (size_t i = 1; i < signal_length - 1; ++i) {
-    if (signal[i] > signal[i - 1] && signal[i] >= signal[i + 1] && signal[i] >= previous_valley + selective) {
-      peaks.push_back(signal[i]);
-      peak_positions.push_back(i);
-      previous_peak = signal[i];
-    } else if (signal[i] < signal[i - 1] && signal[i] <= signal[i + 1] && signal[i] <= previous_peak - selective) {
-      peaks.push_back(signal[i]);
-      peak_positions.push_back(i);
-      previous_valley = signal[i];
+    if (signal_values[position] > max) {
+      max = signal_values[position];
     }
   }
 }
 
-static size_t GetSignalsTotalLength(const std::vector<std::vector<float> > &signals) {
+static inline size_t GetSignalsTotalLength(const std::vector<std::vector<float> > &signals) {
   size_t length = 0;
   for (size_t i = 0; i < signals.size(); ++i) {
     length += signals[i].size();
@@ -303,17 +227,17 @@ static size_t GetSignalsTotalLength(const std::vector<std::vector<float> > &sign
   return length;
 }
 
-static void SaveVectorToFile(const float *signal, size_t signal_length, const std::string &file_path) {
+static inline void SaveVectorToFile(const float *signal_values, size_t signal_length, const std::string &file_path) {
   FILE *output_file = fopen(file_path.c_str(), "w");
   assert(output_file != NULL);
   for (size_t signal_position = 0; signal_position < signal_length - 1; ++signal_position) {
-    fprintf(output_file, "%f\t", signal[signal_position]);
+    fprintf(output_file, "%f\t", signal_values[signal_position]);
   }
-  fprintf(output_file, "%f\n", signal[signal_length - 1]);
+  fprintf(output_file, "%f\n", signal_values[signal_length - 1]);
   fclose(output_file);
 }
 
-static void SaveVectorToFile(const size_t *positions, size_t signal_length, const std::string &file_path) {
+static inline void SaveVectorToFile(const size_t *positions, size_t signal_length, const std::string &file_path) {
   FILE *output_file = fopen(file_path.c_str(), "w");
   assert(output_file != NULL);
   for (size_t signal_position = 0; signal_position < signal_length - 1; ++signal_position) {
@@ -321,236 +245,6 @@ static void SaveVectorToFile(const size_t *positions, size_t signal_length, cons
   }
   fprintf(output_file, "%lu\n", positions[signal_length - 1]);
   fclose(output_file);
-}
-
-// scrappie code to do segmentation
-struct Event {
-  uint64_t start;
-  size_t length;
-  float mean;
-  float stdv;
-};
-
-struct DetectorArgs {
-  size_t window_length1;
-  size_t window_length2;
-  float threshold1;
-  float threshold2;
-  float peak_height;
-};
-
-static DetectorArgs const event_detection_defaults = {
-  .window_length1 = 3,
-  .window_length2 = 6,
-  .threshold1 = 1.4f,
-  .threshold2 = 9.0f,
-  .peak_height = 0.2f
-};
-
-static DetectorArgs const event_detection_rna = {
-  .window_length1 = 7,
-  .window_length2 = 14,
-  .threshold1 = 2.5f,
-  .threshold2 = 9.0f,
-  .peak_height = 1.0f
-};
-
-struct Detector {
-  int DEF_PEAK_POS;
-  float DEF_PEAK_VAL;
-  float *signal;
-  size_t signal_length;
-  float threshold;
-  size_t window_length;
-  size_t masked_to;
-  int peak_pos;
-  float peak_value;
-  bool valid_peak;
-};
-
-static inline void ComputePrefixSumAndPrefixSumSquares(const float *data, size_t data_length, std::vector<float> &prefix_sum, std::vector<float> &prefix_sum_square) {
-  assert(data_length > 0);
-  prefix_sum.emplace_back(0.0f);
-  prefix_sum_square.emplace_back(0.0f);
-  for (size_t i = 0; i < data_length; ++i) {
-    prefix_sum.emplace_back(prefix_sum[i] + data[i]);
-    prefix_sum_square.emplace_back(prefix_sum_square[i] + data[i] * data[i]);
-  }
-}
-
-static inline void ComputeTStat(const float *prefix_sum, const float *prefix_sum_square, size_t signal_length, size_t window_length, std::vector<float> &tstat) {
-  const float eta = FLT_MIN;
-  // Quick return:
-  // t-test not defined for number of points less than 2
-  // need at least as many points as twice the window length
-  if (signal_length < 2 * window_length || window_length < 2) {
-    for (size_t i = 0; i < signal_length; ++i) {
-      tstat.emplace_back(0.0f);
-    }
-    return;
-  }
-  // fudge boundaries
-  for (size_t i = 0; i < window_length; ++i) {
-    tstat.emplace_back(0.0f);
-  }
-  // get to work on the rest
-  for (size_t i = window_length; i <= signal_length - window_length; ++i) {
-    float sum1 = prefix_sum[i];
-    float sumsq1 = prefix_sum_square[i];
-    if (i > window_length) {
-      sum1 -= prefix_sum[i - window_length];
-      sumsq1 -= prefix_sum_square[i - window_length];
-    }
-    float sum2 = prefix_sum[i + window_length] - prefix_sum[i];
-    float sumsq2 = prefix_sum_square[i + window_length] - prefix_sum_square[i];
-    float mean1 = sum1 / window_length;
-    float mean2 = sum2 / window_length;
-    float combined_var = sumsq1 / window_length - mean1 * mean1 + sumsq2 / window_length - mean2 * mean2;
-    // Prevent problem due to very small variances
-    combined_var = fmaxf(combined_var, eta);
-    //t-stat
-    //  Formula is a simplified version of Student's t-statistic for the
-    //  special case where there are two samples of equal size with
-    //  differing variance
-    const float delta_mean = mean2 - mean1;
-    tstat.emplace_back(fabs(delta_mean) / sqrt(combined_var / window_length));
-  }
-  // fudge boundaries
-  for (size_t i = 0; i < window_length; ++i) {
-    tstat.emplace_back(0.0f);
-  }
-}
-
-static inline void GeneratePeaksUsingMultiWindows(Detector *short_detector, Detector *long_detector, const float peak_height, std::vector<size_t> &peaks) {
-  assert(short_detector->signal_length == long_detector->signal_length);
-  const size_t ndetector = 2;
-  Detector *detectors[ndetector] = {short_detector, long_detector};
-  peaks.reserve(short_detector->signal_length);
-  for (size_t i = 0; i < short_detector->signal_length; i++) {
-    for (size_t k = 0; k < ndetector; k++) {
-      Detector *detector = detectors[k];
-      //Carry on if we've been masked out
-      if (detector->masked_to >= i) {
-        continue;
-      }
-      float current_value = detector->signal[i];
-      if (detector->peak_pos == detector->DEF_PEAK_POS) {
-        //CASE 1: We've not yet recorded a maximum
-        if (current_value < detector->peak_value) {
-          //Either record a deeper minimum...
-          detector->peak_value = current_value;
-        } else if (current_value - detector->peak_value > peak_height) { // TODO(Haowen): this might cause overflow, need to fix this
-          // ...or we've seen a qualifying maximum
-          detector->peak_value = current_value;
-          detector->peak_pos = i;
-          //otherwise, wait to rise high enough to be considered a peak
-        }
-      } else {
-        //CASE 2: In an existing peak, waiting to see if it is good
-        if (current_value > detector->peak_value) {
-          //Update the peak
-          detector->peak_value = current_value;
-          detector->peak_pos = i;
-        }
-        //Dominate other tstat signals if we're going to fire at some point
-        if (detector == short_detector) {
-          if (detector->peak_value > detector->threshold) {
-            long_detector->masked_to = detector->peak_pos + detector->window_length;
-            long_detector->peak_pos = long_detector->DEF_PEAK_POS;
-            long_detector->peak_value = long_detector->DEF_PEAK_VAL;
-            long_detector->valid_peak = false;
-          }
-        }
-        //Have we convinced ourselves we've seen a peak
-        if (detector->peak_value - current_value > peak_height && detector->peak_value > detector->threshold) {
-          detector->valid_peak = true;
-        }
-        //Finally, check the distance if this is a good peak
-        if (detector->valid_peak && (i - detector->peak_pos) > detector->window_length / 2) {
-          //Emit the boundary and reset
-          peaks.emplace_back(detector->peak_pos);
-          detector->peak_pos = detector->DEF_PEAK_POS;
-          detector->peak_value = current_value;
-          detector->valid_peak = false;
-        }
-      }
-    }
-  }
-}
-
-static inline Event CreateEvent(size_t start, size_t end, const float *prefix_sum, const float *prefix_sum_square, size_t signal_length) {
-  assert(start < signal_length);
-  assert(end <= signal_length);
-  Event event;
-  event.start = start;
-  event.length = end - start;
-  event.mean = (prefix_sum[end] - prefix_sum[start]) / event.length;
-  float deltasqr = prefix_sum_square[end] - prefix_sum_square[start];
-  float var = deltasqr / event.length - event.mean * event.mean;
-  event.stdv = sqrtf(fmaxf(var, 0.0f));
-  return event;
-}
-
-static inline void CreateEvents(const size_t *peaks, uint32_t peak_size, const float *prefix_sum, const float *prefix_sum_square, size_t signal_length, std::vector<Event> &events) {
-  // Count number of events found
-  size_t num_events = 1;
-  for (size_t i = 1; i < peak_size; ++i) {
-    if (peaks[i] > 0 && peaks[i] < signal_length) {
-      num_events++;
-    }
-  }
-  // First event -- starts at zero
-  events.emplace_back(CreateEvent(0, peaks[0], prefix_sum, prefix_sum_square, signal_length));
-  // Other events -- peak[i-1] -> peak[i]
-  for (size_t pi = 1 ; pi < num_events - 1 ; pi++) {
-    events.emplace_back(CreateEvent(peaks[pi - 1], peaks[pi], prefix_sum, prefix_sum_square, signal_length));
-  }
-  // Last event -- ends at signal_length
-  events.emplace_back(CreateEvent(peaks[num_events - 2], signal_length, prefix_sum, prefix_sum_square, signal_length));
-}
-
-static inline void DetectEvents(const float *signal, size_t signal_length, const DetectorArgs &edparam, std::vector<float> &prefix_sum, std::vector<float> &prefix_sum_square, std::vector<float> &tstat1, std::vector<float> &tstat2, std::vector<size_t> &peaks, std::vector<Event> &events) {
-  //std::vector<float> prefix_sum;
-  prefix_sum.reserve(signal_length + 1);
-  //std::vector<float> prefix_sum_square;
-  prefix_sum_square.reserve(signal_length + 1);
-  ComputePrefixSumAndPrefixSumSquares(signal, signal_length, prefix_sum, prefix_sum_square);
-
-  //std::vector<float> tstat1;
-  //std::vector<float> tstat2;
-  ComputeTStat(prefix_sum.data(), prefix_sum_square.data(), signal_length, edparam.window_length1, tstat1);
-  ComputeTStat(prefix_sum.data(), prefix_sum_square.data(), signal_length, edparam.window_length2, tstat2);
-
-  Detector short_detector = {
-    .DEF_PEAK_POS = -1,
-    .DEF_PEAK_VAL = FLT_MAX,
-    .signal = tstat1.data(),
-    .signal_length = signal_length,
-    .threshold = edparam.threshold1,
-    .window_length = edparam.window_length1,
-    .masked_to = 0,
-    .peak_pos = -1,
-    .peak_value = FLT_MAX,
-    .valid_peak = false
-  };
-
-  Detector long_detector = {
-    .DEF_PEAK_POS = -1,
-    .DEF_PEAK_VAL = FLT_MAX,
-    .signal = tstat2.data(),
-    .signal_length = signal_length,
-    .threshold = edparam.threshold2,
-    .window_length = edparam.window_length2,
-    .masked_to = 0,
-    .peak_pos = -1,
-    .peak_value = FLT_MAX,
-    .valid_peak = false
-  };
-
-  //std::vector<size_t> peaks;
-  GeneratePeaksUsingMultiWindows(&short_detector, &long_detector, edparam.peak_height, peaks);
-  CreateEvents(peaks.data(), peaks.size(), prefix_sum.data(), prefix_sum_square.data(), signal_length, events);
-  std::cerr << "Detected " << events.size() << " events.\n";
 }
 } // namespace sigmap
 

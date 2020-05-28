@@ -18,7 +18,7 @@ struct Signal {
   float offset;
   // signal
   size_t signal_length;
-  float *signal;
+  float *signal_values;
 };
 
 class SignalBatch {
@@ -29,8 +29,8 @@ class SignalBatch {
       if (signals_[read_index].name != nullptr) {
         free(signals_[read_index].name);
       }
-      if (signals_[read_index].signal != nullptr) {
-        free(signals_[read_index].signal);
+      if (signals_[read_index].signal_values != nullptr) {
+        free(signals_[read_index].signal_values);
       }
     }
   }
