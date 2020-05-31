@@ -49,8 +49,8 @@ void Sigmap::Map() {
     positive_chains.clear();
     reference_spatial_index.GeneratePointCloud(read_feature_signal.data(), read_feature_signal.size(), read_signal_point_cloud_step_size, read_point_cloud);
     reference_spatial_index.GenerateChains(read_point_cloud, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, reference_feature_signals, positive_chains);
-    std::cerr << "Max chaining score: " << positive_chains[0].score << ", signal_index: " << positive_chains[0].start_position << ", anchor target start postion: " << positive_chains[0].end_position << ".\n";
-    std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(positive_chains[0].start_position) << ", length: " << reference_feature_signals[positive_chains[0].start_position].size() << "\n";
+    std::cerr << "Max chaining score: " << positive_chains[0].score << ", signal_index: " << positive_chains[0].reference_sequence_index << ", anchor target start postion: " << positive_chains[0].start_position << ", anchor target end postion: " << positive_chains[0].end_position << ", # anchors: " << positive_chains[0].num_anchors << ".\n";
+    std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(positive_chains[0].reference_sequence_index) << ", length: " << reference_feature_signals[positive_chains[0].reference_sequence_index].size() << "\n";
     std::cerr << "\n";
   }
   std::cerr << "Finished mapping in " << GetRealTime() - real_start_time << ", # reads: " << num_loaded_read_signals << "\n";

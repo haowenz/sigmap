@@ -12,9 +12,10 @@
 namespace sigmap {
 struct SignalAnchorChain {
   float score;
-  uint64_t start_position;
-  uint64_t end_position;
-  size_t num_points;
+  uint32_t reference_sequence_index;
+  uint32_t start_position;
+  uint32_t end_position;
+  size_t num_anchors;
   //uint64_t *point_positions;
 };
 
@@ -51,7 +52,7 @@ class SpatialIndex {
   void GenerateCandidatesOnOneDirection(std::vector<uint64_t> *hits, std::vector<uint64_t> *candidates);
   void GenerateCandidates(const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits, std::vector<uint64_t> *positive_candidates, std::vector<uint64_t> *negative_candidates);
 
-  void GenerateChains(const std::vector<std::vector<float> > &query_point_cloud, int query_point_cloud_step_size, float search_radius, size_t num_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains);
+  void GenerateChains(const std::vector<std::vector<float> > &query_point_cloud, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains);
 
  protected:
   int dimension_;

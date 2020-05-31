@@ -338,9 +338,10 @@ void SpatialIndex::GenerateCandidates(const std::vector<std::vector<float> > &po
   }
 }
 
-void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_point_cloud, int query_point_cloud_step_size, float search_radius, size_t num_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains) {
+void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_point_cloud, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains) {
   int max_gap_length = 1000; // TODO(Haowen): make it a parameter
-  std::vector<std::vector<SignalAnchor> > anchors_on_diff_signals(num_signals);
+  int chaining_band_length = 50; // TODO(Haowen): make it a parameter
+  std::vector<std::vector<SignalAnchor> > anchors_on_diff_signals(num_target_signals);
   nanoflann::SearchParams params;
   params.sorted = false;
   std::vector<std::pair<size_t, float> > point_anchors;
@@ -350,20 +351,24 @@ void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_
     //std::cout << "radiusSearch(): radius=" << search_radius << " -> " << num_point_anchors << " matches\n";
     for (size_t ai = 0; ai < num_point_anchors; ai++) {
       size_t target_signal_index = 0, target_signal_position = 0;
-      GetSignalIndexAndPosition(point_anchors[ai].first, num_signals, target_signals, target_signal_index, target_signal_position);
+      GetSignalIndexAndPosition(point_anchors[ai].first, num_target_signals, target_signals, target_signal_index, target_signal_position);
       anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, query_point_cloud_step_size * pi, point_anchors[ai].second});
       //std::cout << "idx["<< ai << "]=" << point_anchors[ai].first << " dist["<< ai << "]=" << point_anchors[ai].second << std::endl;
     }
   }
   // Sort the anchors based on their occurrence on target signal
-  for (size_t target_signal_index = 0; target_signal_index < num_signals; ++target_signal_index) {
+  for (size_t target_signal_index = 0; target_signal_index < num_target_signals; ++target_signal_index) {
     std::sort(anchors_on_diff_signals[target_signal_index].begin(), anchors_on_diff_signals[target_signal_index].end());
   }
   // Chaining DP done on each individual target signal
   float max_chaining_score = std::numeric_limits<float>::min();
   size_t max_chain_end_anchor_index = 0;
   size_t max_chain_target_signal_index = 0;
-  for (size_t target_signal_index = 0; target_signal_index < num_signals; ++target_signal_index) {
+  size_t max_chain_num_anchors = 0;
+  size_t max_chain_start_anchor_index = 0;
+  bool max_chain_is_updated = false;
+  for (size_t target_signal_index = 0; target_signal_index < num_target_signals; ++target_signal_index) {
+    max_chain_is_updated = false;
     std::vector<float> chaining_scores;
     std::vector<float> chaining_predecessors;
     for (size_t anchor_index = 0; anchor_index < anchors_on_diff_signals[target_signal_index].size(); ++anchor_index) {
@@ -373,8 +378,8 @@ void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_
       int32_t current_anchor_target_position = anchors_on_diff_signals[target_signal_index][anchor_index].target_position;
       int32_t current_anchor_query_position = anchors_on_diff_signals[target_signal_index][anchor_index].query_position;
       size_t previous_anchor_index = 0;
-      if (anchor_index > 50) {
-        previous_anchor_index = anchor_index - 50;
+      if (anchor_index > (size_t)chaining_band_length) {
+        previous_anchor_index = anchor_index - chaining_band_length;
       }
       for (; previous_anchor_index < anchor_index; ++previous_anchor_index) {
         int32_t previous_anchor_target_position = anchors_on_diff_signals[target_signal_index][previous_anchor_index].target_position;
@@ -410,17 +415,27 @@ void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_
           chaining_predecessors[anchor_index] = previous_anchor_index;
           //std::cerr << "update_curr_max: " << current_chaining_score << "\n";
         }
-      } 
+      }
       // Update chain with max score
       if (chaining_scores[anchor_index] > max_chaining_score) {
         max_chaining_score = chaining_scores[anchor_index];
         max_chain_end_anchor_index = anchor_index;
         max_chain_target_signal_index = target_signal_index;
-        // TODO(Haowen): traceback
+        max_chain_is_updated = true;
+      }
+    }
+    if (max_chain_is_updated) {
+      max_chain_start_anchor_index = chaining_predecessors[max_chain_end_anchor_index];
+      if (max_chain_start_anchor_index != chaining_predecessors[max_chain_start_anchor_index]) {
+        max_chain_num_anchors = 1;
+        while (chaining_predecessors[max_chain_start_anchor_index] != max_chain_start_anchor_index) {
+          max_chain_start_anchor_index = chaining_predecessors[max_chain_start_anchor_index];
+          ++max_chain_num_anchors;
+        }
       }
     }
   }
-  positive_chains.emplace_back(SignalAnchorChain{max_chaining_score, max_chain_target_signal_index, anchors_on_diff_signals[max_chain_target_signal_index][max_chain_end_anchor_index].target_position, 1});
+  positive_chains.emplace_back(SignalAnchorChain{max_chaining_score, max_chain_target_signal_index, anchors_on_diff_signals[max_chain_target_signal_index][max_chain_start_anchor_index].target_position, anchors_on_diff_signals[max_chain_target_signal_index][max_chain_end_anchor_index].target_position, max_chain_num_anchors});
   //std::cerr << "Max chaining score: " << max_chaining_score << ", signal_index: " << max_chain_target_signal_index << ", anchor target end postion: " << anchors_on_diff_signals[max_chain_target_signal_index].target_position << ".\n"
 }
 } // namespace sigmap
