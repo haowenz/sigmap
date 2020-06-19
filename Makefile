@@ -1,4 +1,4 @@
-cpp_source=sequence_batch.cc signal_batch.cc pore_model.cc cwt.cc spatial_index.cc sigmap.cc
+cpp_source=sequence_batch.cc signal_batch.cc pore_model.cc cwt.cc spatial_index.cc sigmap.cc fast_dtw.cc
 src_dir=src
 objs_dir=objs
 objs+=$(patsubst %.cc,$(objs_dir)/%.o,$(cpp_source))
