@@ -5,11 +5,17 @@
 #include <vector>
 
 #include "nanoflann.hpp"
-#include "KDTreeVectorOfVectorsAdaptor.h"
+//#include "KDTreeVectorOfVectorsAdaptor.h"
 #include "sequence_batch.h"
 #include "signal_batch.h"
+#include "sigmap_adaptor.h"
 
 namespace sigmap {
+enum Direction {
+  Positive,
+  Negative,
+};
+
 struct SignalAnchorChain {
   float score;
   uint32_t reference_sequence_index;
@@ -20,8 +26,8 @@ struct SignalAnchorChain {
 };
 
 struct SignalAnchor {
-  size_t target_position;
-  size_t query_position;
+  uint32_t target_position;
+  uint32_t query_position;
   float distance;
   bool operator<(const SignalAnchor& a) const {
     return std::tie(target_position, query_position, distance) < std::tie(a.target_position, a.query_position, a.distance);
@@ -43,16 +49,17 @@ class SpatialIndex {
   }
   //void Statistics(uint32_t num_sequences, const SequenceBatch &reference);
   //void CheckIndex(uint32_t num_sequences, const SequenceBatch &reference);
-  void GeneratePointCloud(const float *signal, size_t signal_length, int step_size, std::vector<std::vector<float> > &point_cloud);
-  void GetSignalIndexAndPosition(size_t point_index, size_t num_signals, const std::vector<std::vector<float> > &signals, size_t &signal_index, size_t &signal_position);
-  void Construct(size_t num_signals, const std::vector<std::vector<float> > &signals);
+  //void GeneratePointCloud(const float *signal_values, size_t signal_length, int step_size, std::vector<Point> &point_cloud);
+  void GeneratePointCloudOnOneDirection(Direction direction, uint32_t signal_index, const float *signal_values, size_t signal_length, int step_size, std::vector<Point> &point_cloud);
+  //void GetSignalIndexAndPosition(size_t point_index, size_t num_signals, const std::vector<std::vector<float> > &signals, size_t &signal_index, size_t &signal_position);
+  void Construct(size_t num_signals, const std::vector<std::vector<float> > &positive_signals, const std::vector<std::vector<float> > &negative_signals);
   void Save();
   void Load();
-  void CollectCandiates(int max_seed_frequency, const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits);
-  void GenerateCandidatesOnOneDirection(std::vector<uint64_t> *hits, std::vector<uint64_t> *candidates);
-  void GenerateCandidates(const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits, std::vector<uint64_t> *positive_candidates, std::vector<uint64_t> *negative_candidates);
+  //void CollectCandiates(int max_seed_frequency, const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits);
+  //void GenerateCandidatesOnOneDirection(std::vector<uint64_t> *hits, std::vector<uint64_t> *candidates);
+  //void GenerateCandidates(const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits, std::vector<uint64_t> *positive_candidates, std::vector<uint64_t> *negative_candidates);
 
-  void GenerateChains(const std::vector<std::vector<float> > &query_point_cloud, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains);
+  void GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains, std::vector<SignalAnchorChain> &negative_chains);
 
  protected:
   int dimension_;
@@ -62,8 +69,9 @@ class SpatialIndex {
   std::vector<int> max_seed_frequencies_;
   int num_threads_;
   std::string index_file_path_prefix_; // For now, I have to use two files *.pt for dim, max leaf, points and *.si for spatial index.
-  KDTreeVectorOfVectorsAdaptor< std::vector<std::vector<float> >, float > *spatial_index_;
-  std::vector<std::vector<float> > point_cloud_; // TODO(Haowen): remove this duplicate later
+  //KDTreeVectorOfVectorsAdaptor< std::vector<std::vector<float> >, float > *spatial_index_;
+  SigmapAdaptor<float> *spatial_index_;
+  std::vector<Point> point_cloud_; // TODO(Haowen): remove this duplicate later
 };
 } // namespace sigmap
 

@@ -148,33 +148,43 @@ namespace sigmap {
 //  }
 //}
 
-void SpatialIndex::GeneratePointCloud(const float *signal, size_t signal_length, int step_size, std::vector<std::vector<float> > &point_cloud) {
+void SpatialIndex::GeneratePointCloudOnOneDirection(Direction direction, uint32_t signal_index, const float *signal_values, size_t signal_length, int step_size, std::vector<Point> &point_cloud) {
   for (size_t signal_position = 0; signal_position < signal_length - dimension_ + 1; signal_position += step_size) {
-    point_cloud.emplace_back(std::vector<float>(signal + signal_position, signal + signal_position + dimension_));
+    uint64_t strand = direction == Positive ? 0 : 1;
+    //uint64_t position = ((((uint64_t)signal_index) << 32 | (uint32_t)signal_position) << 1) | strand;
+    uint64_t position = ((((uint64_t)signal_index) << 32 | (uint32_t)signal_position) << 1) | strand;
+    point_cloud.emplace_back(position, signal_values[signal_position]);
   }
 }
 
-void SpatialIndex::GetSignalIndexAndPosition(size_t point_index, size_t num_signals, const std::vector<std::vector<float> > &signals, size_t &signal_index, size_t &signal_position) {
-  for (signal_index = 0; signal_index < num_signals; ++signal_index) {
-    signal_position = signals[signal_index].size() - dimension_ + 1;
-    if (point_index > signal_position) {
-      point_index -= signal_position;
-    } else {
-      signal_position = point_index;
-      break;
-    }
-  }
-}
+//void SpatialIndex::GetSignalIndexAndPosition(size_t point_index, size_t num_signals, const std::vector<std::vector<float> > &signals, size_t &signal_index, size_t &signal_position) {
+//  for (signal_index = 0; signal_index < num_signals; ++signal_index) {
+//    signal_position = signals[signal_index].size() - dimension_ + 1;
+//    if (point_index > signal_position) {
+//      point_index -= signal_position;
+//    } else {
+//      signal_position = point_index;
+//      break;
+//    }
+//  }
+//}
 
-void SpatialIndex::Construct(size_t num_signals, const std::vector<std::vector<float> > &signals) {
+void SpatialIndex::Construct(size_t num_signals, const std::vector<std::vector<float> > &positive_signals, const std::vector<std::vector<float> > &negative_signals) {
   double real_start_time = GetRealTime();
   int signal_point_step_size = 1;
-  point_cloud_.reserve(GetSignalsTotalLength(signals));
+  point_cloud_.reserve(2 * GetSignalsTotalLength(positive_signals));
   for (size_t signal_index = 0; signal_index < num_signals; ++signal_index) {
-    GeneratePointCloud(signals[signal_index].data(), signals[signal_index].size(), signal_point_step_size, point_cloud_);
+    GeneratePointCloudOnOneDirection(Positive, signal_index, positive_signals[signal_index].data(), positive_signals[signal_index].size(), signal_point_step_size, point_cloud_);
+  }
+  for (size_t signal_index = 0; signal_index < num_signals; ++signal_index) {
+    GeneratePointCloudOnOneDirection(Negative, signal_index, negative_signals[signal_index].data(), negative_signals[signal_index].size(), signal_point_step_size, point_cloud_);
   }
   std::cerr << "Collected " << point_cloud_.size() << " points.\n";
-  spatial_index_ = new KDTreeVectorOfVectorsAdaptor< std::vector<std::vector<float> >, float >(dimension_ /*dim*/, point_cloud_, max_leaf_ /* max leaf */ );
+  //sort(point_cloud_.begin(), point_cloud_.end());
+  //std::cerr << "Sorted " << point_cloud_.size() << " points.\n";
+  // TODO: mask repetitive kmers
+  //std::cerr << "Masked repetitive kmers " << point_cloud_.size() << " points.\n";
+  spatial_index_ = new SigmapAdaptor<float>(dimension_ /*dim*/, point_cloud_, max_leaf_ /* max leaf */);
   spatial_index_->index->buildIndex();
   std::cerr << "Built spatial index.\n";
   std::cerr << "Built index successfully in " << GetRealTime() - real_start_time << "s.\n";
@@ -189,9 +199,10 @@ void SpatialIndex::Save() {
   size_t point_cloud_size = point_cloud_.size();
   fwrite(&point_cloud_size, sizeof(size_t), 1, point_cloud_file);
   // TODO(Haowen): we don't have to save the whole point cloud. Instead, we can just save the feature signal and build the point cloud on the fly. I will leave this as an easy later code refactor work.
-  for (size_t pi = 0; pi < point_cloud_size; ++pi) {
-    fwrite(point_cloud_[pi].data(), sizeof(float), dimension_, point_cloud_file);
-  }
+  //for (size_t pi = 0; pi < point_cloud_size; ++pi) {
+  //  fwrite(point_cloud_[pi].data(), sizeof(float), dimension_, point_cloud_file);
+  //}
+  fwrite(point_cloud_.data(), sizeof(Point), point_cloud_size, point_cloud_file);
   fclose(point_cloud_file);
   FILE *spatial_index_file = fopen((index_file_path_prefix_ + ".si").c_str(), "wb");
   assert(spatial_index_file != NULL);
@@ -208,182 +219,196 @@ void SpatialIndex::Load() {
   size_t point_cloud_size = 0;
   fread(&point_cloud_size, sizeof(size_t), 1, point_cloud_file);
   point_cloud_.resize(point_cloud_size);
-  for (size_t pi = 0; pi < point_cloud_size; ++pi) {
-    point_cloud_[pi].resize(dimension_);
-    fread(point_cloud_[pi].data(), sizeof(float), dimension_, point_cloud_file);
-  }
+  //for (size_t pi = 0; pi < point_cloud_size; ++pi) {
+  //  point_cloud_[pi].resize(dimension_);
+  //  fread(point_cloud_[pi].data(), sizeof(float), dimension_, point_cloud_file);
+  //}
+  fread(point_cloud_.data(), sizeof(Point), point_cloud_size, point_cloud_file);
   fclose(point_cloud_file);
   std::cerr << "Load point cloud successfully! dim: " << dimension_ << ", max leaf: " << max_leaf_ << ", point cloud size: " << point_cloud_size << "\n";
   FILE *spatial_index_file = fopen((index_file_path_prefix_ + ".si").c_str(), "rb");
   assert(spatial_index_file != NULL);
-  spatial_index_ = new KDTreeVectorOfVectorsAdaptor< std::vector<std::vector<float> >, float >(dimension_ /*dim*/, point_cloud_, max_leaf_ /* max leaf */ );
+  spatial_index_ = new SigmapAdaptor<float>(dimension_ /*dim*/, point_cloud_, max_leaf_ /* max leaf */);
   spatial_index_->index->loadIndex(spatial_index_file);
   fclose(spatial_index_file);
   std::cerr << "Loaded index successfully in "<< GetRealTime() - real_start_time << "s.\n";
 }
 
 // TODO(Haowen): I need to modify the chaining algorithm of minimap2 to also consider the distance of points
-void SpatialIndex::GenerateCandidatesOnOneDirection(std::vector<uint64_t> *hits, std::vector<uint64_t> *candidates) {
-  hits->emplace_back(UINT64_MAX);
-  if (hits->size() > 0) {
-    std::sort(hits->begin(), hits->end());
-    int count = 1;
-    uint64_t previous_hit = (*hits)[0];
-    uint32_t previous_reference_id = previous_hit >> 32;
-    uint32_t previous_reference_position = previous_hit;
-    for (uint32_t pi = 1; pi < hits->size(); ++pi) {
-      uint32_t current_reference_id = (*hits)[pi] >> 32;
-      uint32_t current_reference_position = (*hits)[pi];
-      if (current_reference_id != previous_reference_id || current_reference_position - previous_reference_position > 1000) { // TODO(Haowen): find a proper parameter
-        if (count >= min_num_seeds_required_for_mapping_) {
-          candidates->push_back(previous_hit);
-        }
-        count = 1;
-      } else {
-        ++count;
-      }
-      previous_hit = (*hits)[pi];
-      previous_reference_id = current_reference_id;
-      previous_reference_position = current_reference_position;
-    }
-  }
-}
-
-void SpatialIndex::CollectCandiates(int max_seed_frequency, const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits) {
-  size_t num_points = point_cloud.size();
-  positive_hits->reserve(max_seed_frequencies_[0]);
-  negative_hits->reserve(max_seed_frequencies_[0]);
-  for (size_t pi = 0; pi < num_points; ++pi) {
-    size_t num_results = 5;
-    std::vector<size_t> ret_indexes(num_results);
-    std::vector<float> out_dists_sqr(num_results);
-    nanoflann::KNNResultSet<float> result_set(num_results);
-    result_set.init(&ret_indexes[0], &out_dists_sqr[0]);
-    spatial_index_->index->findNeighbors(result_set, point_cloud[pi].data(), nanoflann::SearchParams(10));
-    //std::cout << "knnSearch(nn=" <<num_results<< "): \n";
-    //for (size_t i = 0; i < num_results; i++) {
-    //  //size_t signal_index = 0;
-    //  //size_t signal_position = 0;
-    //  //GetSignalIndexAndPosition(ret_indexes[i], );
-    //  //std::cout << "ret_index["<<i<<"]=" << ret_indexes[i] << ", signal_index: " << ", signal_position: " << << " out_dist_sqr=" << out_dists_sqr[i] << std::endl;
-    //  std::cout << "ret_index["<<i<<"]=" << ret_indexes[i] << " out_dist_sqr=" << out_dists_sqr[i] << std::endl;
-    //}
-  } 
-  //for (uint32_t mi = 0; mi < num_minimizers; ++mi) {
-  //  khiter_t khash_iterator = kh_get(k64, lookup_table_, minimizers[mi].first << 1);
-  //  if (khash_iterator == kh_end(lookup_table_)) {
-  //    //std::cerr << "The minimizer is not in reference!\n";
-  //    continue;
-  //  }
-  //  uint64_t value = kh_value(lookup_table_, khash_iterator);
-  //  uint32_t read_position = minimizers[mi].second >> 1;
-  //  if (kh_key(lookup_table_, khash_iterator) & 1) { // singleton
-  //    uint64_t reference_id = value >> 33;
-  //    uint32_t reference_position = value >> 1;
-  //    // Check whether the strands of reference minimizer and read minimizer are the same
-  //    // Later, we can play some tricks with 0,1 here to make it faster.
-  //    if (((minimizers[mi].second & 1) ^ (value & 1)) == 0) { // same
-  //      uint32_t candidate_position = reference_position - read_position;// > 0 ? reference_position - read_position : 0;
-  //      // ok, for now we can't see the reference here. So let us don't do the check.
-  //      // Instead, we do it later some time when we check the candidates.
-  //      uint64_t candidate = (reference_id << 32) | candidate_position;
-  //      positive_hits->push_back(candidate);
-  //    } else {
-  //      uint32_t candidate_position = reference_position + read_position - kmer_size_ + 1;// < reference_length ? reference_position - read_position : 0;
-  //      uint64_t candidate = (reference_id << 32) | candidate_position;
-  //      negative_hits->push_back(candidate);
-  //    }
-  //  } else {
-  //    uint32_t offset = value >> 32;
-  //    uint32_t num_occurrences = value;
-  //    if (num_occurrences < (uint32_t)max_seed_frequency) {
-  //      for (uint32_t oi = 0; oi < num_occurrences; ++oi) {
-  //        uint64_t value = occurrence_table_[offset + oi];
-  //        uint64_t reference_id = value >> 33;
-  //        uint32_t reference_position = value >> 1;
-  //        if (((minimizers[mi].second & 1) ^ (value & 1)) == 0) { // same
-  //          uint32_t candidate_position = reference_position - read_position;
-  //          uint64_t candidate = (reference_id << 32) | candidate_position;
-  //          positive_hits->push_back(candidate);
-  //        } else {
-  //          uint32_t candidate_position = reference_position + read_position - kmer_size_ + 1;
-  //          uint64_t candidate = (reference_id << 32) | candidate_position;
-  //          negative_hits->push_back(candidate);
-  //        }
-  //      } 
-  //    }
-  //  }
-  //}
-}
-
-void SpatialIndex::GenerateCandidates(const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits, std::vector<uint64_t> *positive_candidates, std::vector<uint64_t> *negative_candidates) {
-  CollectCandiates(max_seed_frequencies_[0], point_cloud, positive_hits, negative_hits);
-  // Now I can generate primer chain in candidates
-  // Let me use sort for now, but I can use merge later.
-  GenerateCandidatesOnOneDirection(positive_hits, positive_candidates);
-  GenerateCandidatesOnOneDirection(negative_hits, negative_candidates);
-  if (positive_candidates->size() + negative_candidates->size() == 0) {
-    positive_hits->clear();
-    negative_hits->clear();
-    CollectCandiates(max_seed_frequencies_[1], point_cloud, positive_hits, negative_hits);
-    GenerateCandidatesOnOneDirection(positive_hits, positive_candidates);
-    GenerateCandidatesOnOneDirection(negative_hits, negative_candidates);
-    // TODO: if necessary, we can further improve the rescue. But the code below is not thread safe. We can think about this later
-//    if (positive_candidates->size() + negative_candidates->size() == 0) {
-//      --min_num_seeds_required_for_mapping_;
-//      min_num_seeds_required_for_mapping_ = std::max(min_num_seeds_required_for_mapping_, 1);
-//      GenerateCandidatesOnOneDirection(positive_hits, positive_candidates);
-//      GenerateCandidatesOnOneDirection(negative_hits, negative_candidates);
+//void SpatialIndex::GenerateCandidatesOnOneDirection(std::vector<uint64_t> *hits, std::vector<uint64_t> *candidates) {
+//  hits->emplace_back(UINT64_MAX);
+//  if (hits->size() > 0) {
+//    std::sort(hits->begin(), hits->end());
+//    int count = 1;
+//    uint64_t previous_hit = (*hits)[0];
+//    uint32_t previous_reference_id = previous_hit >> 32;
+//    uint32_t previous_reference_position = previous_hit;
+//    for (uint32_t pi = 1; pi < hits->size(); ++pi) {
+//      uint32_t current_reference_id = (*hits)[pi] >> 32;
+//      uint32_t current_reference_position = (*hits)[pi];
+//      if (current_reference_id != previous_reference_id || current_reference_position - previous_reference_position > 1000) { // TODO(Haowen): find a proper parameter
+//        if (count >= min_num_seeds_required_for_mapping_) {
+//          candidates->push_back(previous_hit);
+//        }
+//        count = 1;
+//      } else {
+//        ++count;
+//      }
+//      previous_hit = (*hits)[pi];
+//      previous_reference_id = current_reference_id;
+//      previous_reference_position = current_reference_position;
 //    }
-  }
-}
+//  }
+//}
+//
+//void SpatialIndex::CollectCandiates(int max_seed_frequency, const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits) {
+//  size_t num_points = point_cloud.size();
+//  positive_hits->reserve(max_seed_frequencies_[0]);
+//  negative_hits->reserve(max_seed_frequencies_[0]);
+//  for (size_t pi = 0; pi < num_points; ++pi) {
+//    size_t num_results = 5;
+//    std::vector<size_t> ret_indexes(num_results);
+//    std::vector<float> out_dists_sqr(num_results);
+//    nanoflann::KNNResultSet<float> result_set(num_results);
+//    result_set.init(&ret_indexes[0], &out_dists_sqr[0]);
+//    spatial_index_->index->findNeighbors(result_set, point_cloud[pi].data(), nanoflann::SearchParams(10));
+//    //std::cout << "knnSearch(nn=" <<num_results<< "): \n";
+//    //for (size_t i = 0; i < num_results; i++) {
+//    //  //size_t signal_index = 0;
+//    //  //size_t signal_position = 0;
+//    //  //GetSignalIndexAndPosition(ret_indexes[i], );
+//    //  //std::cout << "ret_index["<<i<<"]=" << ret_indexes[i] << ", signal_index: " << ", signal_position: " << << " out_dist_sqr=" << out_dists_sqr[i] << std::endl;
+//    //  std::cout << "ret_index["<<i<<"]=" << ret_indexes[i] << " out_dist_sqr=" << out_dists_sqr[i] << std::endl;
+//    //}
+//  } 
+//  //for (uint32_t mi = 0; mi < num_minimizers; ++mi) {
+//  //  khiter_t khash_iterator = kh_get(k64, lookup_table_, minimizers[mi].first << 1);
+//  //  if (khash_iterator == kh_end(lookup_table_)) {
+//  //    //std::cerr << "The minimizer is not in reference!\n";
+//  //    continue;
+//  //  }
+//  //  uint64_t value = kh_value(lookup_table_, khash_iterator);
+//  //  uint32_t read_position = minimizers[mi].second >> 1;
+//  //  if (kh_key(lookup_table_, khash_iterator) & 1) { // singleton
+//  //    uint64_t reference_id = value >> 33;
+//  //    uint32_t reference_position = value >> 1;
+//  //    // Check whether the strands of reference minimizer and read minimizer are the same
+//  //    // Later, we can play some tricks with 0,1 here to make it faster.
+//  //    if (((minimizers[mi].second & 1) ^ (value & 1)) == 0) { // same
+//  //      uint32_t candidate_position = reference_position - read_position;// > 0 ? reference_position - read_position : 0;
+//  //      // ok, for now we can't see the reference here. So let us don't do the check.
+//  //      // Instead, we do it later some time when we check the candidates.
+//  //      uint64_t candidate = (reference_id << 32) | candidate_position;
+//  //      positive_hits->push_back(candidate);
+//  //    } else {
+//  //      uint32_t candidate_position = reference_position + read_position - kmer_size_ + 1;// < reference_length ? reference_position - read_position : 0;
+//  //      uint64_t candidate = (reference_id << 32) | candidate_position;
+//  //      negative_hits->push_back(candidate);
+//  //    }
+//  //  } else {
+//  //    uint32_t offset = value >> 32;
+//  //    uint32_t num_occurrences = value;
+//  //    if (num_occurrences < (uint32_t)max_seed_frequency) {
+//  //      for (uint32_t oi = 0; oi < num_occurrences; ++oi) {
+//  //        uint64_t value = occurrence_table_[offset + oi];
+//  //        uint64_t reference_id = value >> 33;
+//  //        uint32_t reference_position = value >> 1;
+//  //        if (((minimizers[mi].second & 1) ^ (value & 1)) == 0) { // same
+//  //          uint32_t candidate_position = reference_position - read_position;
+//  //          uint64_t candidate = (reference_id << 32) | candidate_position;
+//  //          positive_hits->push_back(candidate);
+//  //        } else {
+//  //          uint32_t candidate_position = reference_position + read_position - kmer_size_ + 1;
+//  //          uint64_t candidate = (reference_id << 32) | candidate_position;
+//  //          negative_hits->push_back(candidate);
+//  //        }
+//  //      } 
+//  //    }
+//  //  }
+//  //}
+//}
+//
+//void SpatialIndex::GenerateCandidates(const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits, std::vector<uint64_t> *positive_candidates, std::vector<uint64_t> *negative_candidates) {
+//  CollectCandiates(max_seed_frequencies_[0], point_cloud, positive_hits, negative_hits);
+//  // Now I can generate primer chain in candidates
+//  // Let me use sort for now, but I can use merge later.
+//  GenerateCandidatesOnOneDirection(positive_hits, positive_candidates);
+//  GenerateCandidatesOnOneDirection(negative_hits, negative_candidates);
+//  if (positive_candidates->size() + negative_candidates->size() == 0) {
+//    positive_hits->clear();
+//    negative_hits->clear();
+//    CollectCandiates(max_seed_frequencies_[1], point_cloud, positive_hits, negative_hits);
+//    GenerateCandidatesOnOneDirection(positive_hits, positive_candidates);
+//    GenerateCandidatesOnOneDirection(negative_hits, negative_candidates);
+//    // TODO: if necessary, we can further improve the rescue. But the code below is not thread safe. We can think about this later
+////    if (positive_candidates->size() + negative_candidates->size() == 0) {
+////      --min_num_seeds_required_for_mapping_;
+////      min_num_seeds_required_for_mapping_ = std::max(min_num_seeds_required_for_mapping_, 1);
+////      GenerateCandidatesOnOneDirection(positive_hits, positive_candidates);
+////      GenerateCandidatesOnOneDirection(negative_hits, negative_candidates);
+////    }
+//  }
+//}
 
-void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_point_cloud, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains) {
+void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains, std::vector<SignalAnchorChain> &negative_chains) {
   int max_gap_length = 1000; // TODO(Haowen): make it a parameter
   int chaining_band_length = 50; // TODO(Haowen): make it a parameter
-  std::vector<std::vector<SignalAnchor> > anchors_on_diff_signals(num_target_signals);
+  std::vector<std::vector<std::vector<SignalAnchor> > > anchors_on_diff_signals(2);
+  anchors_on_diff_signals[0] = std::vector<std::vector<SignalAnchor> >(num_target_signals);
+  anchors_on_diff_signals[1] = std::vector<std::vector<SignalAnchor> >(num_target_signals);
+  std::vector<std::vector<SignalAnchor> > &positive_anchors_on_diff_signals = anchors_on_diff_signals[0];
+  std::vector<std::vector<SignalAnchor> > &negative_anchors_on_diff_signals = anchors_on_diff_signals[1];
   nanoflann::SearchParams params;
   params.sorted = false;
   std::vector<std::pair<size_t, float> > point_anchors;
   // Collect anchors
-  for (size_t pi = 0; pi < query_point_cloud.size(); ++pi) {
-    size_t num_point_anchors = spatial_index_->index->radiusSearch(query_point_cloud[pi].data(), search_radius, point_anchors, params);
+  for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; ++pi) {
+    size_t num_point_anchors = spatial_index_->index->radiusSearch(query_signal.data() + pi, search_radius, point_anchors, params);
     //std::cout << "radiusSearch(): radius=" << search_radius << " -> " << num_point_anchors << " matches\n";
     for (size_t ai = 0; ai < num_point_anchors; ai++) {
-      size_t target_signal_index = 0, target_signal_position = 0;
-      GetSignalIndexAndPosition(point_anchors[ai].first, num_target_signals, target_signals, target_signal_index, target_signal_position);
-      anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, query_point_cloud_step_size * pi, point_anchors[ai].second});
+      Point &point = point_cloud_[point_anchors[ai].first];
+      uint32_t target_signal_index = point.position >> 33, target_signal_position = point.position >> 1;
+      Direction target_signal_direction = (point.position & 1) == 0 ? Positive : Negative;
+      //GetSignalIndexAndPosition(point_anchors[ai].first, num_target_signals, target_signals, target_signal_index, target_signal_position);
+      if (target_signal_direction == Positive) {
+        positive_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, query_point_cloud_step_size * pi, point_anchors[ai].second});
+      } else {
+        negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, query_point_cloud_step_size * pi, point_anchors[ai].second});
+      }
       //std::cout << "idx["<< ai << "]=" << point_anchors[ai].first << " dist["<< ai << "]=" << point_anchors[ai].second << std::endl;
     }
   }
   // Sort the anchors based on their occurrence on target signal
   for (size_t target_signal_index = 0; target_signal_index < num_target_signals; ++target_signal_index) {
-    std::sort(anchors_on_diff_signals[target_signal_index].begin(), anchors_on_diff_signals[target_signal_index].end());
+    std::sort(positive_anchors_on_diff_signals[target_signal_index].begin(), positive_anchors_on_diff_signals[target_signal_index].end());
+    std::sort(negative_anchors_on_diff_signals[target_signal_index].begin(), negative_anchors_on_diff_signals[target_signal_index].end());
   }
   // Chaining DP done on each individual target signal
   float max_chaining_score = std::numeric_limits<float>::min();
-  size_t max_chain_end_anchor_index = 0;
-  size_t max_chain_target_signal_index = 0;
-  size_t max_chain_num_anchors = 0;
-  size_t max_chain_start_anchor_index = 0;
+  uint32_t max_chain_end_anchor_index = 0;
+  uint32_t max_chain_target_signal_index = 0;
+  uint32_t max_chain_num_anchors = 0;
+  uint32_t max_chain_start_anchor_index = 0;
+  Direction max_chain_direction = Positive;
   bool max_chain_is_updated = false;
   for (size_t target_signal_index = 0; target_signal_index < num_target_signals; ++target_signal_index) {
+    for (int direction_i = 0; direction_i < 2; ++direction_i) {
     max_chain_is_updated = false;
     std::vector<float> chaining_scores;
     std::vector<float> chaining_predecessors;
-    for (size_t anchor_index = 0; anchor_index < anchors_on_diff_signals[target_signal_index].size(); ++anchor_index) {
+    for (size_t anchor_index = 0; anchor_index < anchors_on_diff_signals[direction_i][target_signal_index].size(); ++anchor_index) {
       float distance_coefficient = 1;// - 0.1 / search_radius * anchors_on_diff_signals[target_signal_index][anchor_index].distance;
       chaining_scores.emplace_back(distance_coefficient * dimension_);
       chaining_predecessors.emplace_back(anchor_index);
-      int32_t current_anchor_target_position = anchors_on_diff_signals[target_signal_index][anchor_index].target_position;
-      int32_t current_anchor_query_position = anchors_on_diff_signals[target_signal_index][anchor_index].query_position;
+      int32_t current_anchor_target_position = anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].target_position;
+      int32_t current_anchor_query_position = anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].query_position;
       size_t previous_anchor_index = 0;
       if (anchor_index > (size_t)chaining_band_length) {
         previous_anchor_index = anchor_index - chaining_band_length;
       }
       for (; previous_anchor_index < anchor_index; ++previous_anchor_index) {
-        int32_t previous_anchor_target_position = anchors_on_diff_signals[target_signal_index][previous_anchor_index].target_position;
-        int32_t previous_anchor_query_position = anchors_on_diff_signals[target_signal_index][previous_anchor_index].query_position;
+        int32_t previous_anchor_target_position = anchors_on_diff_signals[direction_i][target_signal_index][previous_anchor_index].target_position;
+        int32_t previous_anchor_query_position = anchors_on_diff_signals[direction_i][target_signal_index][previous_anchor_index].query_position;
         int32_t target_position_diff = current_anchor_target_position - previous_anchor_target_position;
         assert(target_position_diff >= 0);
         int32_t query_position_diff = current_anchor_query_position - previous_anchor_query_position;
@@ -421,6 +446,7 @@ void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_
         max_chaining_score = chaining_scores[anchor_index];
         max_chain_end_anchor_index = anchor_index;
         max_chain_target_signal_index = target_signal_index;
+        max_chain_direction = direction_i == 0 ? Positive : Negative;
         max_chain_is_updated = true;
       }
     }
@@ -434,8 +460,13 @@ void SpatialIndex::GenerateChains(const std::vector<std::vector<float> > &query_
         }
       }
     }
+    }
   }
-  positive_chains.emplace_back(SignalAnchorChain{max_chaining_score, max_chain_target_signal_index, anchors_on_diff_signals[max_chain_target_signal_index][max_chain_start_anchor_index].target_position, anchors_on_diff_signals[max_chain_target_signal_index][max_chain_end_anchor_index].target_position, max_chain_num_anchors});
+  if (max_chain_direction == Positive) {
+    positive_chains.emplace_back(SignalAnchorChain{max_chaining_score, max_chain_target_signal_index, positive_anchors_on_diff_signals[max_chain_target_signal_index][max_chain_start_anchor_index].target_position, positive_anchors_on_diff_signals[max_chain_target_signal_index][max_chain_end_anchor_index].target_position, max_chain_num_anchors});
+  } else {
+    negative_chains.emplace_back(SignalAnchorChain{max_chaining_score, max_chain_target_signal_index, negative_anchors_on_diff_signals[max_chain_target_signal_index][max_chain_start_anchor_index].target_position, negative_anchors_on_diff_signals[max_chain_target_signal_index][max_chain_end_anchor_index].target_position, max_chain_num_anchors});
+  }
   //std::cerr << "Max chaining score: " << max_chaining_score << ", signal_index: " << max_chain_target_signal_index << ", anchor target end postion: " << anchors_on_diff_signals[max_chain_target_signal_index].target_position << ".\n"
 }
 } // namespace sigmap

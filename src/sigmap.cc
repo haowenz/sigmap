@@ -23,6 +23,10 @@ void Sigmap::Map() {
   SequenceBatch reference_sequence_batch;
   reference_sequence_batch.InitializeLoading(reference_file_path_);
   uint32_t num_reference_sequences = reference_sequence_batch.LoadAllSequences();
+  // Get reverse complement of each ref seq
+  for (size_t reference_sequence_index = 0; reference_sequence_index < num_reference_sequences; ++reference_sequence_index) {
+    reference_sequence_batch.PrepareNegativeSequenceAt(reference_sequence_index);
+  }
   // Use pore model to convert reference sequence to signal
   SignalBatch reference_signal_batch;
   reference_signal_batch.ConvertSequencesToSignals(reference_sequence_batch, pore_model, num_reference_sequences);
@@ -40,18 +44,28 @@ void Sigmap::Map() {
   int read_signal_point_cloud_step_size = 2;
   float search_radius = 0.35;
   std::vector<float> read_feature_signal;
-  std::vector<std::vector<float> > read_point_cloud;
+  std::vector<Point> read_point_cloud;
   std::vector<SignalAnchorChain> positive_chains;
+  std::vector<SignalAnchorChain> negative_chains;
   for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
     read_feature_signal.clear();
     GenerateEvents(read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal);
     read_point_cloud.clear();
     positive_chains.clear();
-    reference_spatial_index.GeneratePointCloud(read_feature_signal.data(), read_feature_signal.size(), read_signal_point_cloud_step_size, read_point_cloud);
-    reference_spatial_index.GenerateChains(read_point_cloud, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, reference_feature_signals, positive_chains);
-    std::cerr << "Max chaining score: " << positive_chains[0].score << ", signal_index: " << positive_chains[0].reference_sequence_index << ", anchor target start postion: " << positive_chains[0].start_position << ", anchor target end postion: " << positive_chains[0].end_position << ", # anchors: " << positive_chains[0].num_anchors << ".\n";
-    std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(positive_chains[0].reference_sequence_index) << ", length: " << reference_feature_signals[positive_chains[0].reference_sequence_index].size() << "\n";
-    std::cerr << "\n";
+    negative_chains.clear();
+    //reference_spatial_index.GeneratePointCloudOnOneDirection(Positive, read_feature_signal.data(), read_feature_signal.size(), read_signal_point_cloud_step_size, read_point_cloud);
+    reference_spatial_index.GenerateChains(read_feature_signal, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, reference_feature_signals, positive_chains, negative_chains);
+    if (!positive_chains.empty()) {
+      std::cerr << "Direction: positive.\n";
+      std::cerr << "Max chaining score: " << positive_chains[0].score << ", signal_index: " << positive_chains[0].reference_sequence_index << ", anchor target start postion: " << positive_chains[0].start_position << ", anchor target end postion: " << positive_chains[0].end_position << ", # anchors: " << positive_chains[0].num_anchors << ".\n";
+      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(positive_chains[0].reference_sequence_index) << ", length: " << reference_feature_signals[positive_chains[0].reference_sequence_index].size() << "\n";
+      std::cerr << "\n";
+    } else {
+      std::cerr << "Direction: negative.\n";
+      std::cerr << "Max chaining score: " << negative_chains[0].score << ", signal_index: " << negative_chains[0].reference_sequence_index << ", anchor target start postion: " << reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].end_position << ", anchor target end postion: " << reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].start_position << ", # anchors: " << negative_chains[0].num_anchors << ".\n";
+      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(negative_chains[0].reference_sequence_index) << ", length: " << reference_feature_signals[negative_chains[0].reference_sequence_index].size() << "\n";
+      std::cerr << "\n";
+    }
   }
   std::cerr << "Finished mapping in " << GetRealTime() - real_start_time << ", # reads: " << num_loaded_read_signals << "\n";
   read_signal_batch.FinalizeLoading();
@@ -140,15 +154,21 @@ void Sigmap::ConstructIndex() {
   SequenceBatch reference_sequence_batch;
   reference_sequence_batch.InitializeLoading(reference_file_path_);
   uint32_t num_reference_sequences = reference_sequence_batch.LoadAllSequences();
+  for (size_t reference_sequence_index = 0; reference_sequence_index < num_reference_sequences; ++reference_sequence_index) {
+    reference_sequence_batch.PrepareNegativeSequenceAt(reference_sequence_index);
+  }
   SignalBatch reference_signal_batch;
   reference_signal_batch.ConvertSequencesToSignals(reference_sequence_batch, pore_model, num_reference_sequences);
-  std::vector<std::vector<float> > reference_feature_signals;
+  std::vector<std::vector<float> > positive_reference_feature_signals;
+  std::vector<std::vector<float> > negative_reference_feature_signals;
   for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
-    reference_feature_signals.push_back(std::vector<float>());
-    GenerateMADNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), reference_feature_signals.back());
+    positive_reference_feature_signals.push_back(std::vector<float>());
+    negative_reference_feature_signals.push_back(std::vector<float>());
+    GenerateMADNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), positive_reference_feature_signals.back());
+    GenerateMADNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).negative_signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), negative_reference_feature_signals.back());
   }
   SpatialIndex spatial_index(dimension_, max_leaf_, 1, output_file_path_);
-  spatial_index.Construct(reference_feature_signals.size(), reference_feature_signals);
+  spatial_index.Construct(positive_reference_feature_signals.size(), positive_reference_feature_signals, negative_reference_feature_signals);
   spatial_index.Save();
   reference_signal_batch.FinalizeLoading();
 }

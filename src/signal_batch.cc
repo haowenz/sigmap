@@ -151,7 +151,7 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
   for (size_t i = 0; i < signal_length; i++) {
     signal_values[i] = (signal_values[i] + offset) * scale;
   }
-  signals_.emplace_back(Signal{read_name, digitisation, range, offset, signal_length, signal_values});
+  signals_.emplace_back(Signal{read_name, digitisation, range, offset, signal_length, signal_values, NULL});
 cleanup4:
   H5Sclose(dataspace_id);
 cleanup3:
@@ -181,9 +181,10 @@ void SignalBatch::ConvertSequencesToSignals(const SequenceBatch &sequence_batch,
   for (size_t sequence_index = 0; sequence_index < num_sequences; ++sequence_index) {
     size_t sequence_length = sequence_batch.GetSequenceLengthAt(sequence_index);
     float *signal_values = pore_model.GetLevelMeansAt(sequence_batch.GetSequenceAt(sequence_index), 0, sequence_length);
+    float *negative_signal_values = pore_model.GetLevelMeansAt(sequence_batch.GetNegativeSequenceAt(sequence_index).data(), 0, sequence_length);
     char *name =  (char*)calloc(1 + sequence_batch.GetSequenceNameLengthAt(sequence_index), sizeof(char));
     strcpy(name, sequence_batch.GetSequenceNameAt(sequence_index));
-    signals_.emplace_back(Signal{name, 0, 0, 0, sequence_length - pore_model.GetKmerSize() + 1, signal_values});
+    signals_.emplace_back(Signal{name, 0, 0, 0, sequence_length - pore_model.GetKmerSize() + 1, signal_values, negative_signal_values});
   }
   std::cerr << "Convert " << num_sequences << " sequences to signals in " << GetRealTime() - real_start_time << "s.\n";
 }

@@ -19,6 +19,7 @@ struct Signal {
   // signal
   size_t signal_length;
   float *signal_values;
+  float *negative_signal_values;
 };
 
 class SignalBatch {
@@ -31,6 +32,9 @@ class SignalBatch {
       }
       if (signals_[read_index].signal_values != nullptr) {
         free(signals_[read_index].signal_values);
+      }
+      if (signals_[read_index].negative_signal_values != nullptr) {
+        free(signals_[read_index].negative_signal_values);
       }
     }
   }

@@ -110,6 +110,7 @@ uint32_t SequenceBatch::LoadAllSequences() {
     }
     length = kseq_read(sequence_kseq_);
   }
+  negative_sequence_batch_.assign(num_sequences, "");
   std::cerr << "Number of sequences: " << num_sequences << ".\n";
   std::cerr << "Number of bases: " << num_bases_ << ".\n";
   std::cerr << "Loaded all sequences successfully in " << GetRealTime() - real_start_time << "s.\n";
