@@ -1,9 +1,11 @@
 #ifndef SIGMAP_H_
 #define SIGMAP_H_
 
+#include <memory>
 #include <string>
 
 #include "event.h"
+#include "output_tools.h"
 #include "signal_batch.h"
 #include "utils.h"
 
@@ -36,6 +38,8 @@ class Sigmap {
   void GeneratePeaks(const float *signal_values, size_t signal_length, float selective, std::vector<float> &peaks, std::vector<size_t> &peak_positions);
   float sDTW(const Signal &target_signal, const Signal &query_signal);
   float sDTW(const float *target_signal_values, size_t target_length, const float *query_signal_values, size_t query_length, ssize_t &mapping_end_position);
+  void EmplaceBackMappingRecord(uint32_t read_id, const char *read_name, uint16_t read_length, uint32_t barcode, uint32_t fragment_start_position, uint16_t fragment_length, uint8_t mapq, uint8_t direction, uint8_t is_unique, std::vector<PAFMapping> *mappings_on_diff_ref_seqs);
+  void OutputMappingsInVector(uint8_t mapq_threshold, uint32_t num_reference_sequences, const SequenceBatch &reference, const std::vector<std::vector<PAFMapping> > &mappings);
   // Output debug files
   void FAST5ToText();
   void EventsToText();
@@ -48,6 +52,7 @@ class Sigmap {
   std::string signal_directory_;
   std::string reference_index_file_path_;
   std::string output_file_path_;
+  std::unique_ptr<OutputTools<PAFMapping> > output_tools_;
 };
 } // namespace sigmap
 

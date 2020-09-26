@@ -59,7 +59,7 @@ class SpatialIndex {
   //void GenerateCandidatesOnOneDirection(std::vector<uint64_t> *hits, std::vector<uint64_t> *candidates);
   //void GenerateCandidates(const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits, std::vector<uint64_t> *positive_candidates, std::vector<uint64_t> *negative_candidates);
 
-  void GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains, std::vector<SignalAnchorChain> &negative_chains);
+  void GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &positive_chains, std::vector<SignalAnchorChain> &negative_chains);
 
  protected:
   int dimension_;

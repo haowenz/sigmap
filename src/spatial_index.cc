@@ -350,7 +350,7 @@ void SpatialIndex::Load() {
 //  }
 //}
 
-void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, const std::vector<std::vector<float> > &target_signals, std::vector<SignalAnchorChain> &positive_chains, std::vector<SignalAnchorChain> &negative_chains) {
+void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &positive_chains, std::vector<SignalAnchorChain> &negative_chains) {
   int max_gap_length = 1000; // TODO(Haowen): make it a parameter
   int chaining_band_length = 50; // TODO(Haowen): make it a parameter
   std::vector<std::vector<std::vector<SignalAnchor> > > anchors_on_diff_signals(2);
