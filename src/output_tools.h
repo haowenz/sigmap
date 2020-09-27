@@ -15,9 +15,9 @@ namespace sigmap {
 struct PAFMapping {
   uint32_t read_id;
   std::string read_name;
-  uint16_t read_length;
+  uint32_t read_length;
   uint32_t fragment_start_position;
-  uint16_t fragment_length;
+  uint32_t fragment_length;
   uint8_t mapq : 6, direction : 1, is_unique : 1;
   bool operator<(const PAFMapping& m) const {
     return std::tie(fragment_start_position, fragment_length, mapq, direction, is_unique, read_id, read_length) < std::tie(m.fragment_start_position, m.fragment_length, m.mapq, m.direction, m.is_unique, m.read_id, m.read_length);

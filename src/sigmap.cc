@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <omp.h>
 #include <string>
 
 #include "cxxopts.hpp"
@@ -11,7 +12,7 @@
 #include "pore_model.h"
 
 namespace sigmap {
-void Sigmap::EmplaceBackMappingRecord(uint32_t read_id, const char *read_name, uint16_t read_length, uint32_t barcode, uint32_t fragment_start_position, uint16_t fragment_length, uint8_t mapq, uint8_t direction, uint8_t is_unique, std::vector<PAFMapping> *mappings_on_diff_ref_seqs) {
+void Sigmap::EmplaceBackMappingRecord(uint32_t read_id, const char *read_name, uint32_t read_length, uint32_t barcode, uint32_t fragment_start_position, uint32_t fragment_length, uint8_t mapq, uint8_t direction, uint8_t is_unique, std::vector<PAFMapping> *mappings_on_diff_ref_seqs) {
   mappings_on_diff_ref_seqs->emplace_back(PAFMapping{read_id, std::string(read_name), read_length, fragment_start_position, fragment_length, mapq, direction, is_unique});
 }
 
@@ -27,6 +28,20 @@ void Sigmap::OutputMappingsInVector(uint8_t mapq_threshold, uint32_t num_referen
       }
     }
   }
+}
+
+uint32_t Sigmap::MoveMappingsInBuffersToMappingContainer(uint32_t num_reference_sequences, std::vector<std::vector<std::vector<PAFMapping> > > *mappings_on_diff_ref_seqs_for_diff_threads_for_saving) {
+  double real_start_time = GetRealTime();
+  uint32_t num_moved_mappings = 0;
+  for (int ti = 0; ti < num_threads_; ++ti) {
+    for (uint32_t i = 0; i < num_reference_sequences; ++i) {
+      num_moved_mappings += (*mappings_on_diff_ref_seqs_for_diff_threads_for_saving)[ti][i].size();
+      mappings_on_diff_ref_seqs_[i].insert(mappings_on_diff_ref_seqs_[i].end(), std::make_move_iterator((*mappings_on_diff_ref_seqs_for_diff_threads_for_saving)[ti][i].begin()), std::make_move_iterator((*mappings_on_diff_ref_seqs_for_diff_threads_for_saving)[ti][i].end()));
+      (*mappings_on_diff_ref_seqs_for_diff_threads_for_saving)[ti][i].clear();
+    }
+  }
+  std::cerr << "Move mappings in " << GetRealTime() - real_start_time << "s.\n";
+  return num_moved_mappings;
 }
 
 void Sigmap::Map() {
@@ -61,10 +76,13 @@ void Sigmap::Map() {
   SpatialIndex reference_spatial_index(1000, std::vector<int>(1000,5000), reference_index_file_path_);
   reference_spatial_index.Load();
 
+  mappings_on_diff_ref_seqs_.reserve(num_reference_sequences);
+  for (uint32_t i = 0; i < num_reference_sequences; ++i) {
+    mappings_on_diff_ref_seqs_.emplace_back(std::vector<PAFMapping>());
+  }
   output_tools_ = std::unique_ptr<PAFOutputTools<PAFMapping> >(new PAFOutputTools<PAFMapping>);
   //std::vector<std::vector<PAFMapping> > &mappings;
   std::vector<std::vector<std::vector<PAFMapping> > > mappings_on_diff_ref_seqs_for_diff_threads;
-  int num_threads_ = 1;
   mappings_on_diff_ref_seqs_for_diff_threads.reserve(num_threads_);
   //mappings_on_diff_ref_seqs_for_diff_threads_for_saving.reserve(num_threads_);
   for (int ti = 0; ti < num_threads_; ++ti) {
@@ -83,10 +101,16 @@ void Sigmap::Map() {
   double real_start_time = GetRealTime();
   int read_signal_point_cloud_step_size = 3;
   float search_radius = 0.30;
+#pragma omp parallel default(none) shared(read_signal_point_cloud_step_size, search_radius, reference_sequence_batch, positive_reference_feature_signals, negative_reference_feature_signals, reference_spatial_index, read_signal_batch, std::cerr, num_loaded_read_signals, num_reference_sequences, mappings_on_diff_ref_seqs_for_diff_threads) num_threads(num_threads_)
+  {
   std::vector<float> read_feature_signal;
   std::vector<Point> read_point_cloud;
   std::vector<SignalAnchorChain> positive_chains;
   std::vector<SignalAnchorChain> negative_chains;
+#pragma omp single
+  {
+  //int grain_size = 50;
+#pragma omp taskloop //grainsize(grain_size) //num_tasks(num_threads_* 50)
   for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
     read_feature_signal.clear();
     GenerateEvents(read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal);
@@ -94,24 +118,28 @@ void Sigmap::Map() {
     positive_chains.clear();
     negative_chains.clear();
     reference_spatial_index.GenerateChains(read_feature_signal, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, positive_chains, negative_chains);
-    // TODO(Haowen): save results in vector and output PAF
+    // Save results in vector and output PAF
+    std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
     if (!positive_chains.empty()) {
-      EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), 0, positive_chains[0].start_position, positive_chains[0].end_position - positive_chains[0].start_position + 1, 30, 1, 1, &(mappings_on_diff_ref_seqs_for_diff_threads[0][positive_chains[0].reference_sequence_index]));
+      EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), 0, positive_chains[0].start_position, positive_chains[0].end_position - positive_chains[0].start_position + 1, 30, 1, 1, &(mappings_on_diff_ref_seqs[positive_chains[0].reference_sequence_index]));
       std::cerr << "Direction: positive.\n";
       std::cerr << "Max chaining score: " << positive_chains[0].score << ", signal_index: " << positive_chains[0].reference_sequence_index << ", anchor target start postion: " << positive_chains[0].start_position << ", anchor target end postion: " << positive_chains[0].end_position << ", # anchors: " << positive_chains[0].num_anchors << ".\n";
       std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(positive_chains[0].reference_sequence_index) << ", length: " << positive_reference_feature_signals[positive_chains[0].reference_sequence_index].size() << "\n";
       std::cerr << "\n";
     } else {
-      EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), 0, reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].end_position, (reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].end_position) - (reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].start_position) + 1, 30, 0, 1, &(mappings_on_diff_ref_seqs_for_diff_threads[0][negative_chains[0].reference_sequence_index]));
+      EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), 0, reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].end_position, negative_chains[0].end_position - negative_chains[0].start_position + 1, 30, 0, 1, &(mappings_on_diff_ref_seqs[negative_chains[0].reference_sequence_index]));
       std::cerr << "Direction: negative.\n";
       std::cerr << "Max chaining score: " << negative_chains[0].score << ", signal_index: " << negative_chains[0].reference_sequence_index << ", anchor target start postion: " << reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].end_position << ", anchor target end postion: " << reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].start_position << ", # anchors: " << negative_chains[0].num_anchors << ".\n";
       std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(negative_chains[0].reference_sequence_index) << ", length: " << negative_reference_feature_signals[negative_chains[0].reference_sequence_index].size() << "\n";
       std::cerr << "\n";
     }
   }
+  } // end of openmp single
+  } // end of openmp parallel
   std::cerr << "Finished mapping in " << GetRealTime() - real_start_time << ", # reads: " << num_loaded_read_signals << "\n";
 
-  OutputMappingsInVector(0, num_reference_sequences, reference_sequence_batch, mappings_on_diff_ref_seqs_for_diff_threads[0]);
+  MoveMappingsInBuffersToMappingContainer(num_reference_sequences, &mappings_on_diff_ref_seqs_for_diff_threads);
+  OutputMappingsInVector(0, num_reference_sequences, reference_sequence_batch, mappings_on_diff_ref_seqs_);
   output_tools_->FinalizeMappingOutput();
   read_signal_batch.FinalizeLoading();
   reference_sequence_batch.FinalizeLoading();
@@ -522,7 +550,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
       sigmap::ExitWithMessage("No output file specified!");
     }
     std::cerr << "Output file: " << output_file_path << "\n";
-    Sigmap sigmap_for_mapping(reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
+    Sigmap sigmap_for_mapping(num_threads, reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
     //sigmap_for_mapping.CWTAlign();
     //sigmap_for_mapping.DTWAlign();
     sigmap_for_mapping.Map();
