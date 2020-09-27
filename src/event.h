@@ -229,7 +229,9 @@ static inline void DetectEvents(const float *signal_values, size_t signal_length
   };
   GeneratePeaksUsingMultiWindows(&short_detector, &long_detector, edparam.peak_height, peaks);
   CreateEvents(peaks.data(), peaks.size(), prefix_sum.data(), prefix_sum_square.data(), signal_length, events);
+#ifdef DEBUG
   std::cerr << "Detected " << events.size() << " events.\n";
+#endif
 }
 } // namespace sigmap
 
