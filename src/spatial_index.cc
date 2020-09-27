@@ -260,8 +260,7 @@ void SpatialIndex::Load() {
 //    }
 //  }
 //}
-//
-//void SpatialIndex::CollectCandiates(int max_seed_frequency, const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits) {
+// //void SpatialIndex::CollectCandiates(int max_seed_frequency, const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits) {
 //  size_t num_points = point_cloud.size();
 //  positive_hits->reserve(max_seed_frequencies_[0]);
 //  negative_hits->reserve(max_seed_frequencies_[0]);
@@ -351,7 +350,7 @@ void SpatialIndex::Load() {
 //}
 
 void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &positive_chains, std::vector<SignalAnchorChain> &negative_chains) {
-  int max_gap_length = 1000; // TODO(Haowen): make it a parameter
+  int max_gap_length = 2000; // TODO(Haowen): make it a parameter
   int chaining_band_length = 50; // TODO(Haowen): make it a parameter
   std::vector<std::vector<std::vector<SignalAnchor> > > anchors_on_diff_signals(2);
   anchors_on_diff_signals[0] = std::vector<std::vector<SignalAnchor> >(num_target_signals);
@@ -362,7 +361,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
   params.sorted = false;
   std::vector<std::pair<size_t, float> > point_anchors;
   // Collect anchors
-  for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; ++pi) {
+  for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; pi += query_point_cloud_step_size) {
     size_t num_point_anchors = spatial_index_->index->radiusSearch(query_signal.data() + pi, search_radius, point_anchors, params);
     //std::cout << "radiusSearch(): radius=" << search_radius << " -> " << num_point_anchors << " matches\n";
     for (size_t ai = 0; ai < num_point_anchors; ai++) {
@@ -371,9 +370,9 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
       Direction target_signal_direction = (point.position & 1) == 0 ? Positive : Negative;
       //GetSignalIndexAndPosition(point_anchors[ai].first, num_target_signals, target_signals, target_signal_index, target_signal_position);
       if (target_signal_direction == Positive) {
-        positive_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, query_point_cloud_step_size * pi, point_anchors[ai].second});
+        positive_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, pi, point_anchors[ai].second});
       } else {
-        negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, query_point_cloud_step_size * pi, point_anchors[ai].second});
+        negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, pi, point_anchors[ai].second});
       }
       //std::cout << "idx["<< ai << "]=" << point_anchors[ai].first << " dist["<< ai << "]=" << point_anchors[ai].second << std::endl;
     }
@@ -397,7 +396,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
     std::vector<float> chaining_scores;
     std::vector<float> chaining_predecessors;
     for (size_t anchor_index = 0; anchor_index < anchors_on_diff_signals[direction_i][target_signal_index].size(); ++anchor_index) {
-      float distance_coefficient = 1;// - 0.1 / search_radius * anchors_on_diff_signals[target_signal_index][anchor_index].distance;
+      float distance_coefficient = 1 - 0.1 / search_radius * anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].distance;
       chaining_scores.emplace_back(distance_coefficient * dimension_);
       chaining_predecessors.emplace_back(anchor_index);
       int32_t current_anchor_target_position = anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].target_position;
