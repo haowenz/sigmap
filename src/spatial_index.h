@@ -12,8 +12,8 @@
 
 namespace sigmap {
 enum Direction {
-  Positive,
-  Negative,
+  Negative = 0,
+  Positive = 1,
 };
 
 struct SignalAnchorChain {
@@ -22,7 +22,13 @@ struct SignalAnchorChain {
   uint32_t start_position;
   uint32_t end_position;
   size_t num_anchors;
+  uint8_t mapq;
+  Direction direction;
+  //bool is_primary_chain;
   //uint64_t *point_positions;
+  bool operator>(const SignalAnchorChain& b) const {
+    return std::tie(score, num_anchors, direction, reference_sequence_index, start_position, end_position) > std::tie(b.score, b.num_anchors, b.direction, b.reference_sequence_index, b.start_position, b.end_position);
+  }
 };
 
 struct SignalAnchor {
@@ -59,7 +65,10 @@ class SpatialIndex {
   //void GenerateCandidatesOnOneDirection(std::vector<uint64_t> *hits, std::vector<uint64_t> *candidates);
   //void GenerateCandidates(const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits, std::vector<uint64_t> *positive_candidates, std::vector<uint64_t> *negative_candidates);
 
-  void GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &positive_chains, std::vector<SignalAnchorChain> &negative_chains);
+  void GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &chains);
+  void TacebackChains(int min_num_anchors, Direction direction, size_t chain_end_anchor_index, uint32_t chain_target_signal_index, const std::vector<float> &chaining_scores, const std::vector<size_t> &chaining_predecessors, const std::vector<std::vector<SignalAnchor> > &anchors_on_diff_signals, std::vector<bool> &anchor_is_used, std::vector<SignalAnchorChain> &chains);
+  void GeneratePrimaryChains(std::vector<SignalAnchorChain> &chains);
+  void ComputeMAPQ(std::vector<SignalAnchorChain> &chains);
 
  protected:
   int dimension_;

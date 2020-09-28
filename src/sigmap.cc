@@ -25,6 +25,8 @@ void Sigmap::OutputMappingsInVector(uint8_t mapq_threshold, uint32_t num_referen
         //if (allocate_multi_mappings_ || (only_output_unique_mappings_ && is_unique == 1)) {
           output_tools_->AppendMapping(ri, reference, *it);
         //}
+      } else {
+          output_tools_->AppendUnmappedRead(ri, reference, *it);
       }
     }
   }
@@ -105,8 +107,7 @@ void Sigmap::Map() {
   {
   std::vector<float> read_feature_signal;
   std::vector<Point> read_point_cloud;
-  std::vector<SignalAnchorChain> positive_chains;
-  std::vector<SignalAnchorChain> negative_chains;
+  std::vector<SignalAnchorChain> chains;
 #pragma omp single
   {
   //int grain_size = 50;
@@ -115,28 +116,38 @@ void Sigmap::Map() {
     read_feature_signal.clear();
     GenerateEvents(read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal);
     read_point_cloud.clear();
-    positive_chains.clear();
-    negative_chains.clear();
-    reference_spatial_index.GenerateChains(read_feature_signal, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, positive_chains, negative_chains);
+    chains.clear();
+    reference_spatial_index.GenerateChains(read_feature_signal, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
     // Save results in vector and output PAF
     std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
-    if (!positive_chains.empty()) {
-      EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), 0, positive_chains[0].start_position, positive_chains[0].end_position - positive_chains[0].start_position + 1, 30, 1, 1, &(mappings_on_diff_ref_seqs[positive_chains[0].reference_sequence_index]));
+    EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), chains[0].direction == Positive ? 0 : 1, chains[0].direction == Positive ? chains[0].start_position : reference_sequence_batch.GetSequenceLengthAt(chains[0].reference_sequence_index) + 1 - chains[0].end_position, chains[0].end_position - chains[0].start_position + 1, chains[0].mapq, chains[0].direction == Positive ? 1 : 0, 1, &(mappings_on_diff_ref_seqs[chains[0].reference_sequence_index]));
+//    if (!positive_chains.empty()) {
+//      EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), 0, positive_chains[0].start_position, positive_chains[0].end_position - positive_chains[0].start_position + 1, 30, 1, 1, &(mappings_on_diff_ref_seqs[positive_chains[0].reference_sequence_index]));
 #ifdef DEBUG
+    if (chains[0].direction == Positive) {
       std::cerr << "Direction: positive.\n";
-      std::cerr << "Max chaining score: " << positive_chains[0].score << ", signal_index: " << positive_chains[0].reference_sequence_index << ", anchor target start postion: " << positive_chains[0].start_position << ", anchor target end postion: " << positive_chains[0].end_position << ", # anchors: " << positive_chains[0].num_anchors << ".\n";
-      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(positive_chains[0].reference_sequence_index) << ", length: " << positive_reference_feature_signals[positive_chains[0].reference_sequence_index].size() << "\n";
-      std::cerr << "\n";
-#endif
     } else {
-      EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), 0, reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].end_position, negative_chains[0].end_position - negative_chains[0].start_position + 1, 30, 0, 1, &(mappings_on_diff_ref_seqs[negative_chains[0].reference_sequence_index]));
-#ifdef DEBUG
       std::cerr << "Direction: negative.\n";
-      std::cerr << "Max chaining score: " << negative_chains[0].score << ", signal_index: " << negative_chains[0].reference_sequence_index << ", anchor target start postion: " << reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].end_position << ", anchor target end postion: " << reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].start_position << ", # anchors: " << negative_chains[0].num_anchors << ".\n";
-      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(negative_chains[0].reference_sequence_index) << ", length: " << negative_reference_feature_signals[negative_chains[0].reference_sequence_index].size() << "\n";
+    }
+      std::cerr << "Best chaining score: " << chains[0].score << ", signal_index: " << chains[0].reference_sequence_index << ", anchor target start postion: " << chains[0].start_position << ", anchor target end postion: " << chains[0].end_position << ", # anchors: " << chains[0].num_anchors << ", mapq: " << (int)chains[0].mapq << ".\n";
+      for (size_t i = 1; i < chains.size(); ++i) {
+        std::cerr << i << "best chaining score: " << chains[i].score << ", signal_index: " << chains[i].reference_sequence_index << ", anchor target start postion: " << chains[i].start_position << ", anchor target end postion: " << chains[i].end_position << ", # anchors: " << chains[i].num_anchors << ", mapq: " << (int)chains[i].mapq << ".\n";
+      }
+      //if (chains.size() > 1) {
+      //  std::cerr << "Second best chaining score: " << chains[1].score << ".\n";
+      //}
+      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(chains[0].reference_sequence_index) << ", length: " << positive_reference_feature_signals[chains[0].reference_sequence_index].size() << "\n";
       std::cerr << "\n";
 #endif
-    }
+//    } else {
+//      EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), 0, reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].end_position, negative_chains[0].end_position - negative_chains[0].start_position + 1, 30, 0, 1, &(mappings_on_diff_ref_seqs[negative_chains[0].reference_sequence_index]));
+//#ifdef DEBUG
+//      std::cerr << "Direction: negative.\n";
+//      std::cerr << "Max chaining score: " << negative_chains[0].score << ", signal_index: " << negative_chains[0].reference_sequence_index << ", anchor target start postion: " << reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].end_position << ", anchor target end postion: " << reference_sequence_batch.GetSequenceLengthAt(negative_chains[0].reference_sequence_index) + 1 - negative_chains[0].start_position << ", # anchors: " << negative_chains[0].num_anchors << ".\n";
+//      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(negative_chains[0].reference_sequence_index) << ", length: " << negative_reference_feature_signals[negative_chains[0].reference_sequence_index].size() << "\n";
+//      std::cerr << "\n";
+//#endif
+//    }
   }
   } // end of openmp single
   } // end of openmp parallel

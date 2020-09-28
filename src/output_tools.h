@@ -164,6 +164,12 @@ class OutputTools {
   inline void AppendMappingOutput(const std::string &line) {
     fprintf(mapping_output_file_, "%s", line.data());
   }
+  inline void AppendUnmappedRead(uint32_t rid, const SequenceBatch &reference, const PAFMapping &mapping) {
+    //const char *reference_sequence_name = reference.GetSequenceNameAt(rid);
+    //uint32_t reference_sequence_length = reference.GetSequenceLengthAt(rid);
+    //uint32_t mapping_end_position = mapping.fragment_start_position + mapping.fragment_length;
+    this->AppendMappingOutput(mapping.read_name + "\t" + std::to_string(mapping.read_length) + "\t*\t*\t*\t*\t*\t*\t*\t*\t*" + std::to_string(mapping.mapq) + "\n");
+  }
   virtual void AppendMapping(uint32_t rid, const SequenceBatch &reference, const MappingRecord &mapping) = 0;
   inline std::string GeneratePAFLine(const SequenceBatch &query_batch, uint32_t query_index, const int query_start, const int query_end, const char relative_strand, const SequenceBatch &target_batch, uint32_t target_index, const int target_start, const int target_end, const int num_matches, const int alignment_length, const int mapping_quality) {
     return std::string(query_batch.GetSequenceNameAt(query_index)) + "\t" + std::to_string(query_batch.GetSequenceLengthAt(query_index)) + "\t" + std::to_string(query_start) + "\t" + std::to_string(query_end) + "\t" + relative_strand + "\t" + std::string(target_batch.GetSequenceNameAt(target_index)) + "\t" + std::to_string(target_batch.GetSequenceLengthAt(target_index)) + "\t" + std::to_string(target_start) + "\t" + std::to_string(target_end) + "\t" + std::to_string(num_matches) + "\t" + std::to_string(alignment_length) + "\t" + std::to_string(mapping_quality) + "\n";
