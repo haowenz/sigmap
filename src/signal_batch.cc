@@ -160,19 +160,36 @@ cleanup3:
 }
 
 void SignalBatch::NormalizeSignalAt(size_t signal_index) {
-  // Should use a linear algorithm like median of medians
-  // But for now let us use sort
-  std::vector<float> tmp_signal((signals_[signal_index]).signal_values, (signals_[signal_index]).signal_values + (signals_[signal_index]).signal_length);
-  std::nth_element(tmp_signal.begin(), tmp_signal.begin() + tmp_signal.size() / 2, tmp_signal.end());
-  float signal_median = tmp_signal[tmp_signal.size() / 2]; // This is a fake median, but should be okay for a quick implementation
-  for (size_t i = 0; i < tmp_signal.size(); ++i) {
-    tmp_signal[i] = std::abs(tmp_signal[i] - signal_median);
+  //// Should use a linear algorithm like median of medians
+  //// But for now let us use sort
+  //std::vector<float> tmp_signal((signals_[signal_index]).signal_values, (signals_[signal_index]).signal_values + (signals_[signal_index]).signal_length);
+  //std::nth_element(tmp_signal.begin(), tmp_signal.begin() + tmp_signal.size() / 2, tmp_signal.end());
+  //float signal_median = tmp_signal[tmp_signal.size() / 2]; // This is a fake median, but should be okay for a quick implementation
+  //for (size_t i = 0; i < tmp_signal.size(); ++i) {
+  //  tmp_signal[i] = std::abs(tmp_signal[i] - signal_median);
+  //}
+  //std::nth_element(tmp_signal.begin(), tmp_signal.begin() + tmp_signal.size() / 2, tmp_signal.end());
+  //float MAD = tmp_signal[tmp_signal.size() / 2]; // Again, fake MAD, ok for a quick implementation
+  //// Now we can normalize signal
+  //for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
+  //  ((signals_[signal_index]).signal_values)[i] = (((signals_[signal_index]).signal_values)[i] - signal_median) / MAD;
+  //}
+  // Calculate mean
+  float mean = 0;
+  for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
+    mean += ((signals_[signal_index]).signal_values)[i];//signal_values[i];
   }
-  std::nth_element(tmp_signal.begin(), tmp_signal.begin() + tmp_signal.size() / 2, tmp_signal.end());
-  float MAD = tmp_signal[tmp_signal.size() / 2]; // Again, fake MAD, ok for a quick implementation
+  mean /= signals_[signal_index].signal_length;//signal_length;
+  // Calculate standard deviation
+  float SD = 0;
+  for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
+    SD += (((signals_[signal_index]).signal_values)[i] - mean) * (((signals_[signal_index]).signal_values)[i] - mean);
+  }
+  SD /= (signals_[signal_index].signal_length - 1);
+  SD = sqrt(SD); 
   // Now we can normalize signal
   for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
-    ((signals_[signal_index]).signal_values)[i] = (((signals_[signal_index]).signal_values)[i] - signal_median) / MAD;
+    ((signals_[signal_index]).signal_values)[i] = (((signals_[signal_index]).signal_values)[i] - mean) / SD;
   }
 }
 

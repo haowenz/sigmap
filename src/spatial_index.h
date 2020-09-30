@@ -56,9 +56,9 @@ class SpatialIndex {
   //void Statistics(uint32_t num_sequences, const SequenceBatch &reference);
   //void CheckIndex(uint32_t num_sequences, const SequenceBatch &reference);
   //void GeneratePointCloud(const float *signal_values, size_t signal_length, int step_size, std::vector<Point> &point_cloud);
-  void GeneratePointCloudOnOneDirection(Direction direction, uint32_t signal_index, const float *signal_values, size_t signal_length, int step_size, std::vector<Point> &point_cloud);
+  void GeneratePointCloudOnOneDirection(Direction direction, uint32_t signal_index, const std::vector<std::vector<bool> > &is_masked, const float *signal_values, size_t signal_length, int step_size, std::vector<Point> &point_cloud);
   //void GetSignalIndexAndPosition(size_t point_index, size_t num_signals, const std::vector<std::vector<float> > &signals, size_t &signal_index, size_t &signal_position);
-  void Construct(size_t num_signals, const std::vector<std::vector<float> > &positive_signals, const std::vector<std::vector<float> > &negative_signals);
+  void Construct(size_t num_signals, const std::vector<std::vector<bool> > &positive_is_masked, const std::vector<std::vector<bool> > &negative_is_masked, const std::vector<std::vector<float> > &positive_signals, const std::vector<std::vector<float> > &negative_signals);
   void Save();
   void Load();
   //void CollectCandiates(int max_seed_frequency, const std::vector<std::vector<float> > &point_cloud, std::vector<uint64_t> *positive_hits, std::vector<uint64_t> *negative_hits);

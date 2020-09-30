@@ -168,7 +168,7 @@ class OutputTools {
     //const char *reference_sequence_name = reference.GetSequenceNameAt(rid);
     //uint32_t reference_sequence_length = reference.GetSequenceLengthAt(rid);
     //uint32_t mapping_end_position = mapping.fragment_start_position + mapping.fragment_length;
-    this->AppendMappingOutput(mapping.read_name + "\t" + std::to_string(mapping.read_length) + "\t*\t*\t*\t*\t*\t*\t*\t*\t*" + std::to_string(mapping.mapq) + "\n");
+    this->AppendMappingOutput(mapping.read_name + "\t" + std::to_string(mapping.read_length) + "\t*\t*\t*\t*\t*\t*\t*\t*\t*\t" + std::to_string(mapping.mapq) + "\n");
   }
   virtual void AppendMapping(uint32_t rid, const SequenceBatch &reference, const MappingRecord &mapping) = 0;
   inline std::string GeneratePAFLine(const SequenceBatch &query_batch, uint32_t query_index, const int query_start, const int query_end, const char relative_strand, const SequenceBatch &target_batch, uint32_t target_index, const int target_start, const int target_end, const int num_matches, const int alignment_length, const int mapping_quality) {

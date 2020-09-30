@@ -15,7 +15,7 @@
 
 #include "cwt.h"
 
-#define DEBUG
+//#define DEBUG
 #define LEGACY_FAST5_RAW_ROOT "/Raw/Reads/"
 
 namespace sigmap {

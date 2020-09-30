@@ -6,12 +6,139 @@
 #include <string>
 
 #include "cxxopts.hpp"
+#include "khash.h"
 #include "nanoflann.hpp"
 #include "spatial_index.h"
 #include "sequence_batch.h"
 #include "pore_model.h"
 
+KHASH_MAP_INIT_INT(k64, uint64_t);
+
 namespace sigmap {
+void Sigmap::GenerateMaskedPositions(int kmer_size, float frequency, uint32_t num_sequences, const SequenceBatch &sequence_batch, std::vector<std::vector<bool> > &positive_is_masked, std::vector<std::vector<bool> > &negative_is_masked) {
+  double real_start_time = GetRealTime();
+  khash_t(k64)* kmer_hist = kh_init(k64);
+  uint64_t num_shifted_bits = 2 * (kmer_size - 1); 
+  uint64_t mask = (((uint64_t)1) << (2 * kmer_size)) - 1;
+  uint64_t seeds_in_two_strands[2] = {0, 0};
+  uint64_t num_kmers = 0;
+  int unambiguous_length = 0;
+  // Count kmers
+  for (uint32_t sequence_index = 0; sequence_index < num_sequences; ++sequence_index) {
+    uint32_t sequence_length = sequence_batch.GetSequenceLengthAt(sequence_index);
+    const char *sequence = sequence_batch.GetSequenceAt(sequence_index);
+    unambiguous_length = 0;
+    seeds_in_two_strands[0] = 0;
+    seeds_in_two_strands[1] = 0;
+    for (uint32_t position = 0; position < sequence_length; ++position) {
+      uint8_t current_base = SequenceBatch::CharToUint8(sequence[position]);
+      if (current_base < 4) { // not an ambiguous base
+        seeds_in_two_strands[0] = ((seeds_in_two_strands[0] << 2) | current_base) & mask; // forward k-mer
+        seeds_in_two_strands[1] = (seeds_in_two_strands[1] >> 2) | (((uint64_t)(3 ^ current_base)) << num_shifted_bits); // reverse k-mer
+        //if (seeds_in_two_strands[0] == seeds_in_two_strands[1]) {
+        //  continue; // skip "symmetric k-mers" as we don't know it strand
+        //}
+        ++unambiguous_length;
+        if (unambiguous_length >= kmer_size) {
+          uint64_t strand = seeds_in_two_strands[0] < seeds_in_two_strands[1] ? 0 : 1; // strand
+          khiter_t kmer_hist_iterator = kh_get(k64, kmer_hist, seeds_in_two_strands[strand]);
+          if (kmer_hist_iterator != kh_end(kmer_hist)) {
+            kh_value(kmer_hist, kmer_hist_iterator) += 1;
+          } else {
+            int khash_return_code;
+            khiter_t kmer_hist_insert_iterator = kh_put(k64, kmer_hist, seeds_in_two_strands[strand], &khash_return_code);
+            assert(khash_return_code != -1 && khash_return_code != 0);
+            kh_value(kmer_hist, kmer_hist_insert_iterator) = 1;
+          }
+          ++num_kmers;
+        }
+      } else {
+        unambiguous_length = 0;
+        seeds_in_two_strands[0] = 0;
+        seeds_in_two_strands[1] = 0;
+      }
+    }
+  }
+  std::cout << "# " << kmer_size << "mers: " << num_kmers << "\n";
+  // Mask kmers
+  uint64_t num_masked_kmers = 0;
+  for (uint32_t sequence_index = 0; sequence_index < num_sequences; ++sequence_index) {
+    uint32_t sequence_length = sequence_batch.GetSequenceLengthAt(sequence_index);
+    const char *sequence = sequence_batch.GetSequenceAt(sequence_index);
+    positive_is_masked.emplace_back(std::vector<bool>(sequence_length - kmer_size + 1, false));
+    unambiguous_length = 0;
+    seeds_in_two_strands[0] = 0;
+    seeds_in_two_strands[1] = 0;
+    for (uint32_t position = 0; position < sequence_length; ++position) {
+      uint8_t current_base = SequenceBatch::CharToUint8(sequence[position]);
+      if (current_base < 4) { // not an ambiguous base
+        seeds_in_two_strands[0] = ((seeds_in_two_strands[0] << 2) | current_base) & mask; // forward k-mer
+        seeds_in_two_strands[1] = (seeds_in_two_strands[1] >> 2) | (((uint64_t)(3 ^ current_base)) << num_shifted_bits); // reverse k-mer
+        ++unambiguous_length;
+        if (unambiguous_length >= kmer_size) {
+          uint64_t strand = seeds_in_two_strands[0] < seeds_in_two_strands[1] ? 0 : 1; // strand
+          khiter_t kmer_hist_iterator = kh_get(k64, kmer_hist, seeds_in_two_strands[strand]);
+          assert(kmer_hist_iterator != kh_end(kmer_hist));
+          uint64_t kmer_freq = kh_value(kmer_hist, kmer_hist_iterator);
+          //std::cerr << "count: " << kh_value(kmer_hist, kmer_hist_iterator) << " position: " << position << " sequence_i: " << sequence_index << "\n";
+          //std::cerr << "size: " << is_masked[sequence_index].size() << "\n";
+          if ((kmer_freq / (float)num_kmers) > frequency) {
+            positive_is_masked[sequence_index][position + 1 - kmer_size] = true;
+            ++num_masked_kmers;
+          } else {
+            positive_is_masked[sequence_index][position + 1 - kmer_size] = false;
+          }
+        }
+      } else {
+        unambiguous_length = 0;
+        seeds_in_two_strands[0] = 0;
+        seeds_in_two_strands[1] = 0;
+        if (position >= (uint32_t)kmer_size - 1) {
+          positive_is_masked[sequence_index][position + 1 - kmer_size] = true;
+          ++num_masked_kmers;
+        }
+      }
+    }
+    const char *negative_sequence = sequence_batch.GetNegativeSequenceAt(sequence_index).data();
+    negative_is_masked.emplace_back(std::vector<bool>(sequence_length - kmer_size + 1, false));
+    unambiguous_length = 0;
+    seeds_in_two_strands[0] = 0;
+    seeds_in_two_strands[1] = 0;
+    for (uint32_t position = 0; position < sequence_length; ++position) {
+      uint8_t current_base = SequenceBatch::CharToUint8(negative_sequence[position]);
+      if (current_base < 4) { // not an ambiguous base
+        seeds_in_two_strands[0] = ((seeds_in_two_strands[0] << 2) | current_base) & mask; // forward k-mer
+        seeds_in_two_strands[1] = (seeds_in_two_strands[1] >> 2) | (((uint64_t)(3 ^ current_base)) << num_shifted_bits); // reverse k-mer
+        ++unambiguous_length;
+        if (unambiguous_length >= kmer_size) {
+          uint64_t strand = seeds_in_two_strands[0] < seeds_in_two_strands[1] ? 0 : 1; // strand
+          khiter_t kmer_hist_iterator = kh_get(k64, kmer_hist, seeds_in_two_strands[strand]);
+          assert(kmer_hist_iterator != kh_end(kmer_hist));
+          uint64_t kmer_freq = kh_value(kmer_hist, kmer_hist_iterator);
+          //std::cerr << "count: " << kh_value(kmer_hist, kmer_hist_iterator) << " position: " << position << " sequence_i: " << sequence_index << "\n";
+          //std::cerr << "size: " << is_masked[sequence_index].size() << "\n";
+          if ((kmer_freq / (float)num_kmers) > frequency) {
+            negative_is_masked[sequence_index][position + 1 - kmer_size] = true;
+            ++num_masked_kmers;
+          } else {
+            negative_is_masked[sequence_index][position + 1 - kmer_size] = false;
+          }
+        }
+      } else {
+        unambiguous_length = 0;
+        seeds_in_two_strands[0] = 0;
+        seeds_in_two_strands[1] = 0;
+        if (position >= (uint32_t)kmer_size - 1) {
+          negative_is_masked[sequence_index][position + 1 - kmer_size] = true;
+          ++num_masked_kmers;
+        }
+      }
+    }
+  }
+  kh_destroy(k64, kmer_hist);
+  std::cerr << "Mask " << num_masked_kmers << " high frequency kmer in " << GetRealTime() - real_start_time << "s.\n";
+}
+
 void Sigmap::EmplaceBackMappingRecord(uint32_t read_id, const char *read_name, uint32_t read_length, uint32_t barcode, uint32_t fragment_start_position, uint32_t fragment_length, uint8_t mapq, uint8_t direction, uint8_t is_unique, std::vector<PAFMapping> *mappings_on_diff_ref_seqs) {
   mappings_on_diff_ref_seqs->emplace_back(PAFMapping{read_id, std::string(read_name), read_length, fragment_start_position, fragment_length, mapq, direction, is_unique});
 }
@@ -101,9 +228,7 @@ void Sigmap::Map() {
 
   // Map each reads
   double real_start_time = GetRealTime();
-  int read_signal_point_cloud_step_size = 3;
-  float search_radius = 0.30;
-#pragma omp parallel default(none) shared(read_signal_point_cloud_step_size, search_radius, reference_sequence_batch, positive_reference_feature_signals, negative_reference_feature_signals, reference_spatial_index, read_signal_batch, std::cerr, num_loaded_read_signals, num_reference_sequences, mappings_on_diff_ref_seqs_for_diff_threads) num_threads(num_threads_)
+#pragma omp parallel default(none) shared(reference_sequence_batch, positive_reference_feature_signals, negative_reference_feature_signals, reference_spatial_index, read_signal_batch, std::cerr, num_loaded_read_signals, num_reference_sequences, mappings_on_diff_ref_seqs_for_diff_threads) num_threads(num_threads_)
   {
   std::vector<float> read_feature_signal;
   std::vector<Point> read_point_cloud;
@@ -114,11 +239,19 @@ void Sigmap::Map() {
 #pragma omp taskloop //grainsize(grain_size) //num_tasks(num_threads_* 50)
   for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
     read_feature_signal.clear();
+    //read_signal_batch.NormalizeSignalAt(read_signal_index);
     GenerateEvents(read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal);
     read_point_cloud.clear();
     chains.clear();
+    float search_radius = 0.25;
+    int read_signal_point_cloud_step_size = 5;
+    if (read_feature_signal.size() < 3000) {
+      read_signal_point_cloud_step_size = 4;
+      search_radius = 0.3;
+    }
     reference_spatial_index.GenerateChains(read_feature_signal, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
     // Save results in vector and output PAF
+    if (chains.size() > 0) {
     std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
     EmplaceBackMappingRecord(read_signal_index, read_signal_batch.GetSignalNameAt(read_signal_index), read_signal_batch.GetSignalLengthAt(read_signal_index), chains[0].direction == Positive ? 0 : 1, chains[0].direction == Positive ? chains[0].start_position : reference_sequence_batch.GetSequenceLengthAt(chains[0].reference_sequence_index) + 1 - chains[0].end_position, chains[0].end_position - chains[0].start_position + 1, chains[0].mapq, chains[0].direction == Positive ? 1 : 0, 1, &(mappings_on_diff_ref_seqs[chains[0].reference_sequence_index]));
 //    if (!positive_chains.empty()) {
@@ -148,6 +281,7 @@ void Sigmap::Map() {
 //      std::cerr << "\n";
 //#endif
 //    }
+    }
   }
   } // end of openmp single
   } // end of openmp parallel
@@ -245,6 +379,20 @@ void Sigmap::ConstructIndex() {
   for (size_t reference_sequence_index = 0; reference_sequence_index < num_reference_sequences; ++reference_sequence_index) {
     reference_sequence_batch.PrepareNegativeSequenceAt(reference_sequence_index);
   }
+  std::vector<std::vector<bool> > positive_is_masked;
+  std::vector<std::vector<bool> > negative_is_masked;
+  GenerateMaskedPositions(dimension_ + pore_model.GetKmerSize() - 1, 0.0002, num_reference_sequences, reference_sequence_batch, positive_is_masked, negative_is_masked);
+  //
+  //yak_ch_t *h;
+  //yak_copt_t opt;
+  //yak_copt_init(&opt);
+  //opt.k = dimension_ + pore_model.GetKmerSize() - 1;
+  //opt.n_thread = num_threads_;
+  //h = yak_count_file(reference_file_path_.data(), NULL, &opt);
+  //int64_t cnt[YAK_N_COUNTS];
+  //yak_ch_hist(h, cnt, opt.n_thread);
+  //yak_ch_get(h,);
+  //
   SignalBatch reference_signal_batch;
   reference_signal_batch.ConvertSequencesToSignals(reference_sequence_batch, pore_model, num_reference_sequences);
   std::vector<std::vector<float> > positive_reference_feature_signals;
@@ -256,9 +404,10 @@ void Sigmap::ConstructIndex() {
     GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).negative_signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), negative_reference_feature_signals.back());
   }
   SpatialIndex spatial_index(dimension_, max_leaf_, 1, output_file_path_);
-  spatial_index.Construct(positive_reference_feature_signals.size(), positive_reference_feature_signals, negative_reference_feature_signals);
+  spatial_index.Construct(positive_reference_feature_signals.size(), positive_is_masked, negative_is_masked, positive_reference_feature_signals, negative_reference_feature_signals);
   spatial_index.Save();
   reference_signal_batch.FinalizeLoading();
+  //yak_ch_destroy(h);
 }
 
 void Sigmap::GenerateEvents(const Signal &signal, std::vector<float> &feature_signal) {
@@ -277,7 +426,7 @@ void Sigmap::GenerateEvents(const Signal &signal, std::vector<float> &feature_si
   }
   GenerateZscoreNormalizedSignal(feature_signal.data(), feature_signal.size(), buffer);
   feature_signal.clear();
-  for (size_t i = 0; i < buffer.size(); i += 2) {
+  for (size_t i = 0; i < buffer.size(); i += 1) {
     feature_signal.emplace_back(buffer[i]);
   }
 }

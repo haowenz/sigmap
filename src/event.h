@@ -30,9 +30,9 @@ struct DetectorArgs {
 static DetectorArgs const event_detection_defaults = {
   .window_length1 = 3,
   .window_length2 = 6,
-  .threshold1 = 1.4f,
-  .threshold2 = 9.0f,
-  .peak_height = 0.2f
+  .threshold1 = 4.60409f,//1.4f,
+  .threshold2 = 3.16927f,//9.0f,
+  .peak_height = 1.0f//0.2f
 };
 
 static DetectorArgs const event_detection_rna = {
