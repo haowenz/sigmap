@@ -412,7 +412,7 @@ void SpatialIndex::ComputeMAPQ(std::vector<SignalAnchorChain> &chains) {
 }
 
 void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &chains) {
-  int max_gap_length = 2000; // TODO(Haowen): make it a parameter
+  int max_gap_length = 5000; // TODO(Haowen): make it a parameter
   int chaining_band_length = 50; // TODO(Haowen): make it a parameter
   int min_num_anchors = 5; // TODO(Haowen): make it a parameter
   int num_best_chains = 2;
@@ -433,6 +433,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
     }
     //std::cout << "radiusSearch(): radius=" << search_radius << " -> " << num_point_anchors << " matches\n";
     for (size_t ai = 0; ai < num_point_anchors; ai++) {
+      //std::cout << "cloud size =" << point_cloud_.size() << " -> " << point_anchors[ai].first << " matches\n";
       Point &point = point_cloud_[point_anchors[ai].first];
       uint32_t target_signal_index = point.position >> 33, target_signal_position = point.position >> 1;
       Direction target_signal_direction = (point.position & 1) == 0 ? Positive : Negative;
@@ -493,7 +494,9 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
             float gap_cost = 0;
             if (gap_length != 0) {
               if (gap_length < max_gap_length) { 
-                gap_cost = 0.001 * dimension_ * distance_coefficient * gap_length + 0.25 * std::log2(gap_length);
+                if (gap_length > query_position_diff) {
+                  gap_cost = 0.001 * dimension_ * distance_coefficient * gap_length + 0.05 * std::log2(gap_length);
+                }
                 current_chaining_score = chaining_scores[previous_anchor_index] + matching_dimensions - gap_cost;
               } else {
                 gap_cost = std::numeric_limits<float>::max();
