@@ -16,6 +16,16 @@ bool compare(const std::pair<float,size_t> &left, const std::pair<float,size_t> 
     return false;
   }
 }
+
+bool compare1(const std::pair<float,size_t> &left, const std::pair<float,size_t> &right) {
+  if (left.first > right.first) {
+    return true;
+  } else if (left.first == right.first) {
+    return (left.second < right.second);
+  } else { 
+    return false;
+  }
+}
 //void Index::Statistics(uint32_t num_sequences, const SequenceBatch &reference) {
 //  double real_start_time = GetRealTime();
 //  int n = 0, n1 = 0;
@@ -425,9 +435,31 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
   //params.sorted = false;
   params.sorted = true;
   std::vector<std::pair<size_t, float> > point_anchors;
+  // Find reliable seeds
+  std::vector<std::pair<float, size_t> > mean_diff_position;
+  for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; ++pi) {
+    float min_diff = std::numeric_limits<float>::max();
+    for (int di = 1; di < dimension_; ++di) {
+      float diff = abs(query_signal[pi + di] - query_signal[pi + di - 1]);
+      if (diff < min_diff) {
+        min_diff = diff;
+      }
+    }
+    mean_diff_position.emplace_back(min_diff, pi);
+  }
+  std::sort(mean_diff_position.begin(), mean_diff_position.end(), compare1);
   // Collect anchors
-  for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; pi += query_point_cloud_step_size) {
-    size_t num_point_anchors = spatial_index_->index->radiusSearch(query_signal.data() + pi, search_radius, point_anchors, params);
+  //for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; pi += query_point_cloud_step_size) {
+  uint32_t previous_position = 0;
+  uint32_t num_positions = 0;
+  for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; ++pi) {
+    uint32_t position = mean_diff_position[pi].second;
+    //if (position < previous_position + dimension_ / 2 && position + dimension_ / 2 > previous_position) {
+    if (position < previous_position + dimension_ && position + dimension_ > previous_position) {
+      continue;
+    }
+    //std::cout << position << "\n";
+    size_t num_point_anchors = spatial_index_->index->radiusSearch(query_signal.data() + position, search_radius, point_anchors, params);
     if (num_point_anchors > 500) {
       continue;
     }
@@ -439,12 +471,17 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
       Direction target_signal_direction = (point.position & 1) == 0 ? Positive : Negative;
       //GetSignalIndexAndPosition(point_anchors[ai].first, num_target_signals, target_signals, target_signal_index, target_signal_position);
       if (target_signal_direction == Positive) {
-        positive_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, pi, point_anchors[ai].second});
+        positive_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position, point_anchors[ai].second});
       } else {
-        negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, pi, point_anchors[ai].second});
+        negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position, point_anchors[ai].second});
       }
       //std::cout << "idx["<< ai << "]=" << point_anchors[ai].first << " dist["<< ai << "]=" << point_anchors[ai].second << std::endl;
     }
+    ++num_positions;
+    if (num_positions >= (query_signal.size() - dimension_ + 1) / query_point_cloud_step_size) {
+      break;
+    }
+    previous_position = position;
   }
   // Sort the anchors based on their occurrence on target signal
   for (size_t target_signal_index = 0; target_signal_index < num_target_signals; ++target_signal_index) {
@@ -467,7 +504,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
       std::vector<bool> anchor_is_used;
       std::vector<std::pair<float, size_t> > end_anchor_index_chaining_scores;
       for (size_t anchor_index = 0; anchor_index < anchors_on_diff_signals[direction_i][target_signal_index].size(); ++anchor_index) {
-        float distance_coefficient = 1;// - 0.1 / search_radius * anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].distance;
+        float distance_coefficient = 1 - 0.1 / search_radius * anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].distance;
         chaining_scores.emplace_back(distance_coefficient * dimension_);
         chaining_predecessors.emplace_back(anchor_index);
         anchor_is_used.emplace_back(false);
