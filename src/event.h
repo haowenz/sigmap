@@ -30,8 +30,8 @@ struct DetectorArgs {
 static DetectorArgs const event_detection_defaults = {
   .window_length1 = 3,
   .window_length2 = 6,
-  .threshold1 = 4.60409f,//1.4f,
-  .threshold2 = 3.16927f,//9.0f,
+  .threshold1 = 4.30265f,//4.60409f,//1.4f,
+  .threshold2 = 2.57058f,//3.16927f,//9.0f,
   .peak_height = 1.0f//0.2f
 };
 
@@ -111,7 +111,7 @@ static inline void ComputeTStat(const float *prefix_sum, const float *prefix_sum
 
 static inline void GeneratePeaksUsingMultiWindows(Detector *short_detector, Detector *long_detector, const float peak_height, std::vector<size_t> &peaks) {
   assert(short_detector->signal_length == long_detector->signal_length);
-  const size_t ndetector = 2;
+  size_t ndetector = 2;
   Detector *detectors[ndetector] = {short_detector, long_detector};
   peaks.reserve(short_detector->signal_length);
   for (size_t i = 0; i < short_detector->signal_length; i++) {

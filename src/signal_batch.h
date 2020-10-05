@@ -44,6 +44,7 @@ class SignalBatch {
   void AddSignalsFromFAST5(const std::string &fast5_file_path);
   void AddSignalFromSingleFAST5(const FAST5File& fast5_file);
   void NormalizeSignalAt(size_t signal_index);
+  void MovingMedianSignalAt(size_t signal_index, int window_size);
   void ConvertSequencesToSignals(const SequenceBatch &sequence_batch, const PoreModel &pore_model, size_t num_sequences);
   const Signal& GetSignalAt(size_t signal_index) const {
     return signals_[signal_index];

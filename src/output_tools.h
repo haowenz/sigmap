@@ -16,12 +16,14 @@ struct PAFMapping {
   uint32_t read_id;
   std::string read_name;
   uint32_t read_length;
+  uint32_t read_start_position;
+  uint32_t read_end_position;
   uint32_t fragment_start_position;
   uint32_t fragment_length;
   uint8_t mapq : 6, direction : 1, is_unique : 1;
   std::string tags;
   bool operator<(const PAFMapping& m) const {
-    return std::tie(fragment_start_position, fragment_length, mapq, direction, is_unique, read_id, read_length) < std::tie(m.fragment_start_position, m.fragment_length, m.mapq, m.direction, m.is_unique, m.read_id, m.read_length);
+    return std::tie(fragment_start_position, fragment_length, mapq, direction, is_unique, read_id, read_start_position, read_end_position) < std::tie(m.fragment_start_position, m.fragment_length, m.mapq, m.direction, m.is_unique, m.read_id, m.read_start_position, m.read_end_position);
   }
   bool operator==(const PAFMapping& m) const {
     return std::tie(fragment_start_position) == std::tie(m.fragment_start_position);
@@ -169,7 +171,7 @@ class OutputTools {
     //const char *reference_sequence_name = reference.GetSequenceNameAt(rid);
     //uint32_t reference_sequence_length = reference.GetSequenceLengthAt(rid);
     //uint32_t mapping_end_position = mapping.fragment_start_position + mapping.fragment_length;
-    this->AppendMappingOutput(mapping.read_name + "\t" + std::to_string(mapping.read_length) + "\t*\t*\t*\t*\t*\t*\t*\t*\t*\t" + std::to_string(mapping.mapq) + "\n");
+    this->AppendMappingOutput(mapping.read_name + "\t" + std::to_string(mapping.read_length) + "\t*\t*\t*\t*\t*\t*\t*\t*\t*\t" + std::to_string(mapping.mapq) + "\t" + mapping.tags + "\n");
   }
   virtual void AppendMapping(uint32_t rid, const SequenceBatch &reference, const MappingRecord &mapping) = 0;
   inline std::string GeneratePAFLine(const SequenceBatch &query_batch, uint32_t query_index, const int query_start, const int query_end, const char relative_strand, const SequenceBatch &target_batch, uint32_t target_index, const int target_start, const int target_end, const int num_matches, const int alignment_length, const int mapping_quality) {
@@ -267,7 +269,7 @@ class PAFOutputTools<PAFMapping> : public OutputTools<PAFMapping> {
     uint32_t reference_sequence_length = reference.GetSequenceLengthAt(rid);
     std::string strand = (mapping.direction & 1) == 1 ? "+" : "-";
     uint32_t mapping_end_position = mapping.fragment_start_position + mapping.fragment_length;
-    this->AppendMappingOutput(mapping.read_name + "\t" + std::to_string(mapping.read_length) + "\t" + std::to_string(0) + "\t" + std::to_string(mapping.read_length) + "\t" + strand + "\t" + std::string(reference_sequence_name) + "\t" + std::to_string(reference_sequence_length) + "\t" + std::to_string(mapping.fragment_start_position) + "\t" + std::to_string(mapping_end_position) + "\t" + std::to_string(mapping.read_length) + "\t" + std::to_string(mapping.fragment_length) + "\t" + std::to_string(mapping.mapq) + "\t" + mapping.tags + "\n");
+    this->AppendMappingOutput(mapping.read_name + "\t" + std::to_string(mapping.read_length) + "\t" + std::to_string(mapping.read_start_position) + "\t" + std::to_string(mapping.read_end_position) + "\t" + strand + "\t" + std::string(reference_sequence_name) + "\t" + std::to_string(reference_sequence_length) + "\t" + std::to_string(mapping.fragment_start_position) + "\t" + std::to_string(mapping_end_position) + "\t" + std::to_string(mapping.read_length) + "\t" + std::to_string(mapping.fragment_length) + "\t" + std::to_string(mapping.mapq) + "\t" + mapping.tags + "\n");
   }
 };
 

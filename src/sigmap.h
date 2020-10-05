@@ -38,7 +38,7 @@ class Sigmap {
   void GeneratePeaks(const float *signal_values, size_t signal_length, float selective, std::vector<float> &peaks, std::vector<size_t> &peak_positions);
   float sDTW(const Signal &target_signal, const Signal &query_signal);
   float sDTW(const float *target_signal_values, size_t target_length, const float *query_signal_values, size_t query_length, ssize_t &mapping_end_position);
-  void EmplaceBackMappingRecord(uint32_t read_id, const char *read_name, uint32_t read_length, uint32_t barcode, uint32_t fragment_start_position, uint32_t fragment_length, uint8_t mapq, uint8_t direction, uint8_t is_unique, std::vector<PAFMapping> *mappings_on_diff_ref_seqs);
+  //void EmplaceBackMappingRecord(uint32_t read_id, const char *read_name, uint32_t read_length, uint32_t barcode, uint32_t fragment_start_position, uint32_t fragment_length, uint8_t mapq, uint8_t direction, uint8_t is_unique, std::vector<PAFMapping> *mappings_on_diff_ref_seqs);
   void OutputMappingsInVector(uint8_t mapq_threshold, uint32_t num_reference_sequences, const SequenceBatch &reference, const std::vector<std::vector<PAFMapping> > &mappings);
   uint32_t MoveMappingsInBuffersToMappingContainer(uint32_t num_reference_sequences, std::vector<std::vector<std::vector<PAFMapping> > > *mappings_on_diff_ref_seqs_for_diff_threads_for_saving);
   void GenerateMaskedPositions(int kmer_size, float frequency, uint32_t num_reference_sequences, const SequenceBatch &sequence_batch, std::vector<std::vector<bool> > &positive_is_masked, std::vector<std::vector<bool> > &negative_is_masked);

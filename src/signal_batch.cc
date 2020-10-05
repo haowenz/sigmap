@@ -70,6 +70,42 @@ void SignalBatch::AddSignalsFromFAST5(const std::string &fast5_file_path) {
     //std::string read_name = GetReadNameFromSingleFAST5(fast5_file);
     //AddReadSignal(fast5_file, read_name);
     AddSignalFromSingleFAST5(fast5_file);
+    size_t group_name_length;
+    char *group_name = nullptr;
+    //size_t read_name_length;
+    char *read_name = nullptr;
+    size_t signal_length;
+    float *signal_values;
+    float digitisation;
+    float range;
+    float offset;
+    herr_t fast5_err;
+    float scale;
+    int num_dims;
+    // Get read name length and name
+    // Note that this weird function returns string length when setting buffer to null.
+    // But when reading the name, the buffer size should be set to string length + 1!
+    ssize_t read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, NULL, 0, H5P_DEFAULT);
+    if (read_group_name_length < 0) {
+      ExitWithMessage("The read name length is invalid!\n");
+    }
+    group_name_length = (size_t)read_group_name_length;
+    group_name = (char*)calloc(1 + group_name_length, sizeof(char));
+    read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, group_name, 1 + group_name_length, H5P_DEFAULT);
+    if (read_group_name_length != (ssize_t)group_name_length) {
+      ExitWithMessage("Read name lengths don't match! Failed to load read name.");
+    }
+    // Get read id and use it as read name
+    std::string read_group = std::string(LEGACY_FAST5_RAW_ROOT) + "/" + std::string(group_name);
+    hid_t read_group_id = H5Gopen(fast5_file.hdf5_file, read_group.data(), H5P_DEFAULT);
+    if (read_group_id < 0) {
+      fprintf(stderr, "Failed to open read group %s\n", read_group.data());
+      exit(-1); // TODO(Haowen): fix this later
+    }
+    GetStringAttributeInGroup(read_group_id, "read_id", &read_name);
+    if (std::string(read_name) == "fd966c60-37e2-4ab1-b9ff-6629c8f53545" || std::string(read_name) == "675b6efc-07b7-4d51-9888-92f76cae7626" || std::string(read_name) == "9977c97e-1749-40e0-88e4-2ec74ace2870") {
+      std::cerr << fast5_file_path << "\n";
+    }
   }
   CloseFAST5(fast5_file);
 }
@@ -109,6 +145,8 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
     exit(-1); // TODO(Haowen): fix this later
   }
   GetStringAttributeInGroup(read_group_id, "read_id", &read_name);
+  if (std::string(read_name) == "ed2d854d-ecdf-493a-aa19-ae2988a467f3" || std::string(read_name) == "2e7d37d3-69c2-440f-84f4-b32967495cf4") {
+  } 
   // Get channel parameters
   const char *channel_id_group = "/UniqueGlobalKey/channel_id";
   hid_t channel_id_group_id = H5Gopen(fast5_file.hdf5_file, channel_id_group, H5P_DEFAULT);
@@ -157,6 +195,23 @@ cleanup4:
 cleanup3:
   H5Dclose(dataset_id);
   //std::cerr << "Read name: " << name << ", # signal points: " << signal_length << ".\n";
+}
+
+void SignalBatch::MovingMedianSignalAt(size_t signal_index, int window_size) {
+  std::vector<float> tmp_signal((signals_[signal_index]).signal_values, (signals_[signal_index]).signal_values + (signals_[signal_index]).signal_length);
+  std::vector<float> window_signal;
+  for (size_t position = 0; position < signals_[signal_index].signal_length - window_size + 1; ++position) {
+    window_signal.clear();
+    for (int wi = 0; wi < window_size; ++wi) {
+      window_signal.push_back(tmp_signal[position + wi]);
+    }
+    std::sort(window_signal.begin(), window_signal.end());
+    if (window_size % 2 == 0) {
+      signals_[signal_index].signal_values[position] = (window_signal[window_size / 2 - 1] + window_signal[window_size / 2]) / 2;
+    } else {
+      signals_[signal_index].signal_values[position] = window_signal[window_size / 2];
+    }
+  }
 }
 
 void SignalBatch::NormalizeSignalAt(size_t signal_index) {

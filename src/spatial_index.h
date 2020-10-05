@@ -16,6 +16,15 @@ enum Direction {
   Positive = 1,
 };
 
+struct SignalAnchor {
+  uint32_t target_position;
+  uint32_t query_position;
+  float distance;
+  bool operator<(const SignalAnchor& a) const {
+    return std::tie(target_position, query_position, distance) < std::tie(a.target_position, a.query_position, a.distance);
+  }
+};
+
 struct SignalAnchorChain {
   float score;
   uint32_t reference_sequence_index;
@@ -25,18 +34,9 @@ struct SignalAnchorChain {
   uint8_t mapq;
   Direction direction;
   //bool is_primary_chain;
-  //uint64_t *point_positions;
+  std::vector<SignalAnchor> anchors;
   bool operator>(const SignalAnchorChain& b) const {
     return std::tie(score, num_anchors, direction, reference_sequence_index, start_position, end_position) > std::tie(b.score, b.num_anchors, b.direction, b.reference_sequence_index, b.start_position, b.end_position);
-  }
-};
-
-struct SignalAnchor {
-  uint32_t target_position;
-  uint32_t query_position;
-  float distance;
-  bool operator<(const SignalAnchor& a) const {
-    return std::tie(target_position, query_position, distance) < std::tie(a.target_position, a.query_position, a.distance);
   }
 };
 
