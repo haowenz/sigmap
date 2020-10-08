@@ -117,6 +117,7 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
   //size_t read_name_length;
   char *read_name = nullptr;
   size_t signal_length;
+  size_t valid_signal_length = 0;
   float *signal_values;
   float digitisation;
   float range;
@@ -187,8 +188,13 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
   // convert to pA
   scale = range / digitisation;
   for (size_t i = 0; i < signal_length; i++) {
-    signal_values[i] = (signal_values[i] + offset) * scale;
+    //if (signal_values[i] (signal_values[i] + offset) * scale > 30 && signal_values[i] (signal_values[i] + offset) * scale < 200) {
+    if ((signal_values[i] + offset) * scale > 30 && (signal_values[i] + offset) * scale < 200) {
+      signal_values[valid_signal_length] = (signal_values[i] + offset) * scale;
+      ++valid_signal_length;
+    }
   }
+  //signal_length = valid_signal_length > 12000 ? 12000 : valid_signal_length;
   signals_.emplace_back(Signal{read_name, digitisation, range, offset, signal_length, signal_values, NULL});
 cleanup4:
   H5Sclose(dataspace_id);

@@ -415,7 +415,7 @@ void SpatialIndex::ComputeMAPQ(std::vector<SignalAnchorChain> &chains) {
     chains[0].mapq = 60;
     return;
   } else {
-    int mapq = 40 * (1 - chains[1].score / chains[0].score) * std::min((size_t)1, chains[0].num_anchors / 20) * log(chains[0].score);
+    int mapq = 40 * (1 - chains[1].score / chains[0].score);// * std::min((size_t)1, chains[0].num_anchors / 20) * log(chains[0].score);
     if (mapq > 60) {
       mapq = 60;
     }
@@ -427,8 +427,8 @@ void SpatialIndex::ComputeMAPQ(std::vector<SignalAnchorChain> &chains) {
 }
 
 void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &chains) {
-  int max_gap_length = 10000; // TODO(Haowen): make it a parameter
-  int chaining_band_length = 50; // TODO(Haowen): make it a parameter
+  int max_gap_length = 5000; // TODO(Haowen): make it a parameter
+  int chaining_band_length = 100; // TODO(Haowen): make it a parameter
   int min_num_anchors = 3; // TODO(Haowen): make it a parameter
   int num_best_chains = 2;
   int num_nearest_points = 500;
@@ -459,9 +459,9 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
   uint32_t num_positions = 0;
   for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; ++pi) {
     uint32_t position = mean_diff_position[pi].second;
-    if (position < previous_position + dimension_ && position + dimension_ > previous_position) {
-      continue;
-    }
+    //if (position <= previous_position + dimension_ / 2 && position + dimension_ / 2 >= previous_position) {
+    //  continue;
+    //}
     //std::cout << position << "\n";
     //size_t num_results = 100;
     //std::vector<size_t> ret_indexes(num_results);
@@ -520,7 +520,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
       std::vector<bool> anchor_is_used;
       std::vector<std::pair<float, size_t> > end_anchor_index_chaining_scores;
       for (size_t anchor_index = 0; anchor_index < anchors_on_diff_signals[direction_i][target_signal_index].size(); ++anchor_index) {
-        float distance_coefficient = 1 - 0.5 / search_radius * anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].distance;
+        float distance_coefficient = 1 - 0.2 * anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].distance / search_radius;
         chaining_scores.emplace_back(distance_coefficient * dimension_);
         chaining_predecessors.emplace_back(anchor_index);
         anchor_is_used.emplace_back(false);
@@ -550,11 +550,11 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
           } else {
             float matching_dimensions = std::min(std::min(target_position_diff, query_position_diff), dimension_) * distance_coefficient;
             int gap_length = std::abs(target_position_diff - query_position_diff);
-            float gap_scale = (float)query_position_diff / target_position_diff; 
+            float gap_scale = target_position_diff > 0 ?(float)query_position_diff / target_position_diff : 1; 
             float gap_cost = 0;
             if (gap_length != 0) {
               //if (gap_length < max_gap_length && target_position_diff <= 1000 && query_position_diff <= 1000 * gap_scale && gap_scale < 1.8 && gap_scale > 0.95) { 
-              if (gap_length < max_gap_length && gap_scale < 1.8 && gap_scale > 0.95) { 
+              if (gap_length < max_gap_length && gap_scale < 1.8 && gap_scale > 0.90) { 
                 //if (gap_length > target_position_diff) {
                   //gap_cost = 0.001 * dimension_ * distance_coefficient * gap_length + 0.05 * std::log2(gap_length);
                 //if (gap_scale > 1) {

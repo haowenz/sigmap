@@ -252,19 +252,21 @@ void Sigmap::Map() {
       read_point_cloud.clear();
       chains.clear();
       float search_radius = 0.08;
+      //float search_radius = 0.05;
       int read_signal_point_cloud_step_size = 8;
-      if (read_feature_signal.size() < 10000) {
-        read_signal_point_cloud_step_size = 7;
-      } 
-      if (read_feature_signal.size() < 8000) {
-        read_signal_point_cloud_step_size = 5;
-      }
-      if (read_feature_signal.size() < 5000) {
-        read_signal_point_cloud_step_size = 3;
-      }
-      if (read_feature_signal.size() < 2000) {
-        read_signal_point_cloud_step_size = 1;
-      }
+      //if (read_feature_signal.size() < 10000) {
+      //  read_signal_point_cloud_step_size = 7;
+      //} 
+      //if (read_feature_signal.size() < 8000) {
+      //  read_signal_point_cloud_step_size = 5;
+      //}
+      //if (read_feature_signal.size() < 5000) {
+      //  read_signal_point_cloud_step_size = 3;
+      //}
+      //if (read_feature_signal.size() < 2000) {
+      //  read_signal_point_cloud_step_size = 1;
+      //}
+      read_signal_point_cloud_step_size = 1;
       reference_spatial_index.GenerateChains(read_feature_signal, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
       // Save results in vector and output PAF
       double mapping_time = GetRealTime() - real_mapping_start_time;
