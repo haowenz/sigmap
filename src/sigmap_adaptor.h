@@ -48,7 +48,6 @@ struct SigmapAdaptor {
       throw std::runtime_error("Data set dimensionality does not match the 'DIM' template argument");
     dims_ = dims;
     index = new index_t(static_cast<int>(dims), *this /* adaptor */, nanoflann::KDTreeSingleIndexAdaptorParams(leaf_max_size));
-    index->buildIndex();
   }
 
   ~SigmapAdaptor() {
