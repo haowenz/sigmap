@@ -379,7 +379,7 @@ void SpatialIndex::TacebackChains(int min_num_anchors, Direction direction, size
     anchors.reserve(100);
     bool stop_at_an_used_anchor = false;
     size_t chain_start_anchor_index = chain_end_anchor_index;//chaining_predecessors[chain_end_anchor_index];
-    size_t chain_num_anchors = 1;
+    size_t chain_num_anchors = 0;
     //if (!anchor_is_used[chain_start_anchor_index] && chain_start_anchor_index != chain_end_anchor_index) {
     if (anchor_is_used[chaining_predecessors[chain_start_anchor_index]]) {
       stop_at_an_used_anchor = true;
@@ -426,17 +426,29 @@ void SpatialIndex::ComputeMAPQ(std::vector<SignalAnchorChain> &chains) {
   }
 }
 
-void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &chains) {
+void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32_t query_start_offset, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &chains) {
   int max_gap_length = 5000; // TODO(Haowen): make it a parameter
   int chaining_band_length = 100; // TODO(Haowen): make it a parameter
-  int min_num_anchors = 3; // TODO(Haowen): make it a parameter
+  int min_num_anchors = 2; // TODO(Haowen): make it a parameter
   int num_best_chains = 2;
   int num_nearest_points = 500;
+  std::vector<SignalAnchorChain> previous_chains;
+  previous_chains.swap(chains);
   std::vector<std::vector<std::vector<SignalAnchor> > > anchors_on_diff_signals(2);
   anchors_on_diff_signals[0] = std::vector<std::vector<SignalAnchor> >(num_target_signals);
   anchors_on_diff_signals[1] = std::vector<std::vector<SignalAnchor> >(num_target_signals);
   std::vector<std::vector<SignalAnchor> > &positive_anchors_on_diff_signals = anchors_on_diff_signals[0];
   std::vector<std::vector<SignalAnchor> > &negative_anchors_on_diff_signals = anchors_on_diff_signals[1];
+  if (previous_chains.size() > 0) {
+    for (uint32_t chain_index = 0; chain_index < previous_chains.size(); ++chain_index) {
+      int strand = previous_chains[chain_index].direction == Positive ? 0 : 1;
+      uint32_t reference_sequence_index = previous_chains[chain_index].reference_sequence_index;
+      assert(previous_chains[chain_index].num_anchors == previous_chains[chain_index].anchors.size());
+      for (uint32_t anchor_index = 0; anchor_index < previous_chains[chain_index].num_anchors; ++anchor_index) {
+        anchors_on_diff_signals[strand][reference_sequence_index].emplace_back(previous_chains[chain_index].anchors[anchor_index]);
+      }
+    }
+  }
   nanoflann::SearchParams params;
   params.sorted = true;
   std::vector<std::pair<size_t, float> > point_anchors;
@@ -484,10 +496,10 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, int qu
       Direction target_signal_direction = (point.position & 1) == 0 ? Positive : Negative;
       //GetSignalIndexAndPosition(point_anchors[ai].first, num_target_signals, target_signals, target_signal_index, target_signal_position);
       if (target_signal_direction == Positive) {
-        positive_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position, point_anchors[ai].second});
+        positive_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position + query_start_offset, point_anchors[ai].second});
         //positive_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position, out_dists_sqr[ai]});
       } else {
-        negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position, point_anchors[ai].second});
+        negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position + query_start_offset, point_anchors[ai].second});
         //negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position, out_dists_sqr[ai]});
       }
       previous_distance = point_anchors[ai].second;

@@ -244,7 +244,7 @@ void Sigmap::Map() {
     read_feature_signal.clear();
     //read_signal_batch.MovingMedianSignalAt(read_signal_index, 8);
     //read_signal_batch.NormalizeSignalAt(read_signal_index);
-    GenerateEvents(read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal);
+    GenerateEvents(0, read_signal_batch.GetSignalLengthAt(read_signal_index), read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal);
     //if (read_feature_signal.size() > 2000) {
     //  read_feature_signal.erase(read_feature_signal.begin() + 2000, read_feature_signal.end());
     //}
@@ -267,7 +267,7 @@ void Sigmap::Map() {
       //  read_signal_point_cloud_step_size = 1;
       //}
       read_signal_point_cloud_step_size = 1;
-      reference_spatial_index.GenerateChains(read_feature_signal, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
+      reference_spatial_index.GenerateChains(read_feature_signal, 0, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
       // Save results in vector and output PAF
       double mapping_time = GetRealTime() - real_mapping_start_time;
       std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
@@ -334,6 +334,165 @@ void Sigmap::Map() {
       }
     }
   }
+  } // end of openmp single
+  } // end of openmp parallel
+  std::cerr << "Finished mapping in " << GetRealTime() - real_start_time << ", # reads: " << num_loaded_read_signals << "\n";
+
+  MoveMappingsInBuffersToMappingContainer(num_reference_sequences, &mappings_on_diff_ref_seqs_for_diff_threads);
+  OutputMappingsInVector(0, num_reference_sequences, reference_sequence_batch, mappings_on_diff_ref_seqs_);
+  output_tools_->FinalizeMappingOutput();
+  read_signal_batch.FinalizeLoading();
+  reference_sequence_batch.FinalizeLoading();
+  reference_signal_batch.FinalizeLoading();
+}
+
+void Sigmap::StreamingMap() {
+  // Load read signals
+  SignalBatch read_signal_batch;
+  read_signal_batch.InitializeLoading(signal_directory_);
+  size_t num_loaded_read_signals = read_signal_batch.LoadAllReadSignals();
+  // Load pore model
+  PoreModel pore_model;
+  pore_model.Load(pore_model_file_path_);
+  // Load reference genome
+  SequenceBatch reference_sequence_batch;
+  reference_sequence_batch.InitializeLoading(reference_file_path_);
+  uint32_t num_reference_sequences = reference_sequence_batch.LoadAllSequences();
+  // Get reverse complement of each ref seq
+  for (size_t reference_sequence_index = 0; reference_sequence_index < num_reference_sequences; ++reference_sequence_index) {
+    reference_sequence_batch.PrepareNegativeSequenceAt(reference_sequence_index);
+  }
+  // Use pore model to convert reference sequence to signal
+  SignalBatch reference_signal_batch;
+  reference_signal_batch.ConvertSequencesToSignals(reference_sequence_batch, pore_model, num_reference_sequences);
+  // Normalize reference signals
+  std::vector<std::vector<float> > positive_reference_feature_signals;
+  std::vector<std::vector<float> > negative_reference_feature_signals;
+  for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
+    positive_reference_feature_signals.push_back(std::vector<float>());
+    negative_reference_feature_signals.push_back(std::vector<float>());
+    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), positive_reference_feature_signals.back());
+    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).negative_signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), negative_reference_feature_signals.back());
+  }
+  // Load spatial index for reference signals 
+  SpatialIndex reference_spatial_index(1000, std::vector<int>(1000,5000), reference_index_file_path_);
+  reference_spatial_index.Load();
+
+  mappings_on_diff_ref_seqs_.reserve(num_reference_sequences);
+  for (uint32_t i = 0; i < num_reference_sequences; ++i) {
+    mappings_on_diff_ref_seqs_.emplace_back(std::vector<PAFMapping>());
+  }
+  output_tools_ = std::unique_ptr<PAFOutputTools<PAFMapping> >(new PAFOutputTools<PAFMapping>);
+  std::vector<std::vector<std::vector<PAFMapping> > > mappings_on_diff_ref_seqs_for_diff_threads;
+  mappings_on_diff_ref_seqs_for_diff_threads.reserve(num_threads_);
+  for (int ti = 0; ti < num_threads_; ++ti) {
+    mappings_on_diff_ref_seqs_for_diff_threads.emplace_back(std::vector<std::vector<PAFMapping> >(num_reference_sequences));
+    for (uint32_t i = 0; i < num_reference_sequences; ++i) {
+      mappings_on_diff_ref_seqs_for_diff_threads[ti][i].reserve(5000 / num_threads_ / num_reference_sequences);
+    }
+  }
+  output_tools_->InitializeMappingOutput(output_file_path_);
+
+  // Map each reads
+  double real_start_time = GetRealTime();
+#pragma omp parallel default(none) shared(reference_sequence_batch, positive_reference_feature_signals, negative_reference_feature_signals, reference_spatial_index, read_signal_batch, std::cerr, num_loaded_read_signals, num_reference_sequences, mappings_on_diff_ref_seqs_for_diff_threads) num_threads(num_threads_)
+  {
+  std::vector<float> read_feature_signal;
+  std::vector<SignalAnchorChain> chains;
+#pragma omp single
+  {
+#pragma omp taskloop
+  for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
+    double real_mapping_start_time = GetRealTime();
+    std::cerr << "mapping read " << read_signal_index << ".\n";
+    //read_signal_batch.MovingMedianSignalAt(read_signal_index, 8);
+    //read_signal_batch.NormalizeSignalAt(read_signal_index);
+    uint32_t sample_rate = 4000;
+    size_t signal_length = read_signal_batch.GetSignalLengthAt(read_signal_index);
+    size_t num_chunks =  signal_length / sample_rate;
+    chains.clear();
+    uint32_t num_events = 0;
+    for (uint32_t chunk_index = 0; chunk_index < num_chunks; ++chunk_index) {
+      read_feature_signal.clear();
+      size_t signal_start = sample_rate * chunk_index;
+      size_t signal_end = sample_rate * (chunk_index + 1);
+      if (signal_end > signal_length) {
+        signal_end = signal_length;
+      }
+      GenerateEvents(signal_start, signal_end, read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal);
+      if (read_feature_signal.size() > 50) {
+        float search_radius = 0.08;
+        int read_signal_point_cloud_step_size = 1;
+        reference_spatial_index.GenerateChains(read_feature_signal, num_events, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
+        if (chains.size() >= 2) {
+          if (chains[0].score / chains[1].score >= 1.85) {
+            break;
+          }
+        } else if (chains.size() == 1 && chains[0].num_anchors >= 8) {
+          if (chunk_index >= 2) {
+            break;
+          }
+        }
+      }
+      num_events += read_feature_signal.size();
+    }
+    // Save results in vector and output PAF
+    double mapping_time = GetRealTime() - real_mapping_start_time;
+    std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
+    if (chains.size() > 0) {
+      float anchor_ref_gap_avg_length = 0;
+      float anchor_read_gap_avg_length = 0;
+      float average_anchor_distance = 0;
+      for (size_t ai = 0; ai < chains[0].anchors.size(); ++ai) {
+        average_anchor_distance += chains[0].anchors[ai].distance;
+        if (ai < chains[0].anchors.size() - 1) {
+          anchor_ref_gap_avg_length += chains[0].anchors[ai].target_position - chains[0].anchors[ai + 1].target_position;
+          anchor_read_gap_avg_length += chains[0].anchors[ai].query_position - chains[0].anchors[ai + 1].query_position;
+        }
+        //std::cerr << "(" << chains[i].anchors[ai].target_position << "," << chains[i].anchors[ai].query_position << "," << chains[i].anchors[ai].distance << "), ";
+      }
+      average_anchor_distance /= chains[0].num_anchors;
+      anchor_ref_gap_avg_length /= chains[0].num_anchors;
+      anchor_read_gap_avg_length /= chains[0].num_anchors;
+      std::string tags;
+      tags.append("mt:f:" + std::to_string(mapping_time * 1000));
+      tags.append("\tsl:i:" + std::to_string(read_signal_batch.GetSignalLengthAt(read_signal_index)));
+      tags.append("\tcm:i:" + std::to_string(chains[0].num_anchors));
+      tags.append("\ts1:f:" + std::to_string(chains[0].score));
+      tags.append("\ts2:f:" + std::to_string(chains.size() > 1 ? chains[1].score : 0));
+      tags.append("\tad:f:" + std::to_string(average_anchor_distance));
+      tags.append("\tat:f:" + std::to_string(anchor_ref_gap_avg_length));
+      tags.append("\taq:f:" + std::to_string(anchor_read_gap_avg_length));
+      mappings_on_diff_ref_seqs[chains[0].reference_sequence_index].emplace_back(PAFMapping{(uint32_t)read_signal_index, std::string(read_signal_batch.GetSignalNameAt(read_signal_index)), (uint32_t)read_feature_signal.size(), chains[0].anchors.back().query_position, chains[0].anchors[0].query_position, chains[0].direction == Positive ? (uint32_t)chains[0].start_position : (uint32_t)(reference_sequence_batch.GetSequenceLengthAt(chains[0].reference_sequence_index) + 1 - chains[0].end_position), (uint32_t)(chains[0].end_position - chains[0].start_position + 1), chains[0].mapq, chains[0].direction == Positive ? (uint8_t)1 : (uint8_t)0, (uint8_t)1, tags});
+#ifdef DEBUG
+      for (size_t i = 0; i < chains.size(); ++i) {
+        if (chains[i].direction == Positive) {
+          std::cerr << i << " best chaining score: " << chains[i].score << ", direction: +" << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(chains[i].reference_sequence_index) << ", anchor target start postion: " << chains[i].start_position << ", anchor target end postion: " << chains[i].end_position << ", # anchors: " << chains[i].num_anchors << ", mapq: " << (int)chains[i].mapq << ".\n";
+          for (size_t ai = 0; ai < chains[i].anchors.size(); ++ai) {
+            std::cerr << "(" << chains[i].anchors[ai].target_position << "," << chains[i].anchors[ai].query_position << "," << chains[i].anchors[ai].distance << "), ";
+          }
+        } else {
+          std::cerr << i << " best chaining score: " << chains[i].score << ", direction: -" << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(chains[i].reference_sequence_index) << ", anchor target start postion: " << reference_sequence_batch.GetSequenceLengthAt(chains[i].reference_sequence_index) + 1 - chains[i].end_position << ", anchor target end postion: " << reference_sequence_batch.GetSequenceLengthAt(chains[i].reference_sequence_index) - chains[i].start_position << ", # anchors: " << chains[i].num_anchors << ", mapq: " << (int)chains[i].mapq << ".\n";
+          for (size_t ai = 0; ai < chains[i].anchors.size(); ++ai) {
+            std::cerr << "(" << chains[i].anchors[ai].target_position << "," << chains[i].anchors[ai].query_position << "," << chains[i].anchors[ai].distance << "), ";
+          }
+        }
+        std::cerr << "\n";
+        std::cerr << "\n";
+      }
+      std::cerr << "Read name: " << read_signal_batch.GetSignalNameAt(read_signal_index) << ", length: " << read_feature_signal.size() << ", reference name: " << reference_sequence_batch.GetSequenceNameAt(chains[0].reference_sequence_index) << ", length: " << positive_reference_feature_signals[chains[0].reference_sequence_index].size() << "\n";
+      std::cerr << "\n";
+#endif
+    } else {
+      std::string tags;
+      tags.append("mt:f:" + std::to_string(mapping_time * 1000));
+      tags.append("\tsl:i:" + std::to_string(read_signal_batch.GetSignalLengthAt(read_signal_index)));
+      tags.append("\tcm:i:" + std::to_string(0));
+      tags.append("\ts1:f:" + std::to_string(0));
+      tags.append("\ts2:f:" + std::to_string(0));
+      mappings_on_diff_ref_seqs[0].emplace_back(PAFMapping{(uint32_t)read_signal_index, std::string(read_signal_batch.GetSignalNameAt(read_signal_index)), (uint32_t)read_feature_signal.size(), 0, 0, 0, 0, 61, (uint8_t)0, (uint8_t)1, tags});
+    }
+  } // end of task loop
   } // end of openmp single
   } // end of openmp parallel
   std::cerr << "Finished mapping in " << GetRealTime() - real_start_time << ", # reads: " << num_loaded_read_signals << "\n";
@@ -461,7 +620,11 @@ void Sigmap::ConstructIndex() {
   //yak_ch_destroy(h);
 }
 
-void Sigmap::GenerateEvents(const Signal &signal, std::vector<float> &feature_signal) {
+void Sigmap::GenerateEvents(size_t start, size_t end, const Signal &signal, std::vector<float> &feature_signal) {
+  assert(start >= 0);
+  assert(start < end);
+  assert(end <= signal.signal_length);
+  size_t signal_length = end - start + 1;
   std::vector<float> buffer;
   std::vector<Event> events;
   std::vector<float> prefix_sum;
@@ -470,7 +633,7 @@ void Sigmap::GenerateEvents(const Signal &signal, std::vector<float> &feature_si
   std::vector<float> tstat2;
   std::vector<size_t> peaks;
   const DetectorArgs ed_params = event_detection_defaults;
-  DetectEvents(signal.signal_values, signal.signal_length, ed_params, prefix_sum, prefix_sum_square, tstat1, tstat2, peaks, events);
+  DetectEvents(signal.signal_values + start, signal_length, ed_params, prefix_sum, prefix_sum_square, tstat1, tstat2, peaks, events);
   feature_signal.clear();
   for (size_t ei = 0; ei < events.size(); ++ei) {
     feature_signal.emplace_back(events[ei].mean);
@@ -480,11 +643,9 @@ void Sigmap::GenerateEvents(const Signal &signal, std::vector<float> &feature_si
   feature_signal.clear();
   for (size_t i = 0; i < buffer.size(); i += 1) {
     //feature_signal.emplace_back(buffer[i]);
-    //if (i >= 1) {
-      if (i == 0 || (i >= 1 && (abs(buffer[i] - feature_signal.back()) > 0.1))) {
-        feature_signal.emplace_back(buffer[i]);
-      }
-    //}
+    if (i == 0 || (i >= 1 && (abs(buffer[i] - feature_signal.back()) > 0.1))) {
+      feature_signal.emplace_back(buffer[i]);
+    }
   }
 #ifdef DEBUG
   std::cerr << "After compression: " << feature_signal.size() << "\n";
@@ -779,7 +940,8 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
     Sigmap sigmap_for_mapping(num_threads, reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
     //sigmap_for_mapping.CWTAlign();
     //sigmap_for_mapping.DTWAlign();
-    sigmap_for_mapping.Map();
+    //sigmap_for_mapping.Map();
+    sigmap_for_mapping.StreamingMap();
     //sigmap_for_mapping.FAST5ToText();
     //sigmap_for_mapping.EventsToText();
   } else if (result.count("h")) {

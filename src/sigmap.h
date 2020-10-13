@@ -27,10 +27,11 @@ class Sigmap {
   // for mapping
   Sigmap(int num_threads, const std::string &reference_file_path, const std::string &pore_model_file_path, const std::string &signal_directory, const std::string &reference_index_file_path, const std::string &output_file_path) : num_threads_(num_threads), reference_file_path_(reference_file_path), pore_model_file_path_(pore_model_file_path), signal_directory_(signal_directory), reference_index_file_path_(reference_index_file_path), output_file_path_(output_file_path) {}
   void Map();
+  void StreamingMap();
   void DTWAlign();
   void CWTAlign();
   // Support functions
-  void GenerateEvents(const Signal &signal, std::vector<float> &feature_signal);
+  void GenerateEvents(size_t start, size_t end, const Signal &signal, std::vector<float> &feature_signal);
   void GenerateFeatureSignalUsingCWT(const Signal &signal, float scale0, std::vector<float> &feature_signal, std::vector<size_t> &feature_positions);
   float GenerateMADNormalizedSignal(const float *signal_values, size_t signal_length, std::vector<float> &normalized_signal);
   float GenerateZscoreNormalizedSignal(const float *signal_values, size_t signal_length, std::vector<float> &normalized_signal);
