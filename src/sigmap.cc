@@ -592,17 +592,6 @@ void Sigmap::ConstructIndex() {
   std::vector<std::vector<bool> > positive_is_masked;
   std::vector<std::vector<bool> > negative_is_masked;
   GenerateMaskedPositions(dimension_ + pore_model.GetKmerSize() - 1, 0.0002, num_reference_sequences, reference_sequence_batch, positive_is_masked, negative_is_masked);
-  //
-  //yak_ch_t *h;
-  //yak_copt_t opt;
-  //yak_copt_init(&opt);
-  //opt.k = dimension_ + pore_model.GetKmerSize() - 1;
-  //opt.n_thread = num_threads_;
-  //h = yak_count_file(reference_file_path_.data(), NULL, &opt);
-  //int64_t cnt[YAK_N_COUNTS];
-  //yak_ch_hist(h, cnt, opt.n_thread);
-  //yak_ch_get(h,);
-  //
   SignalBatch reference_signal_batch;
   reference_signal_batch.ConvertSequencesToSignals(reference_sequence_batch, pore_model, num_reference_sequences);
   std::vector<std::vector<float> > positive_reference_feature_signals;
@@ -683,18 +672,21 @@ float Sigmap::GenerateMADNormalizedSignal(const float *signal_values, size_t sig
 
 float Sigmap::GenerateZscoreNormalizedSignal(const float *signal_values, size_t signal_length, std::vector<float> &normalized_signal) {
   // Calculate mean
-  float mean = 0;
+  double mean = 0;
   for (size_t i = 0; i < signal_length; ++i) {
     mean += signal_values[i];
   }
   mean /= signal_length;
   // Calculate standard deviation
-  float SD = 0;
+  double SD = 0;
   for (size_t i = 0; i < signal_length; ++i) {
     SD += (signal_values[i] - mean) * (signal_values[i] - mean);
   }
   SD /= (signal_length - 1);
   SD = sqrt(SD); 
+#ifdef DEBUG
+  std::cerr << "mean: " << mean << ", stdv: " << SD << "\n";
+#endif
   // Now we can normalize signal
   for (size_t i = 0; i < signal_length; ++i) {
     normalized_signal.emplace_back((signal_values[i] - mean) / SD);

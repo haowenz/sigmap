@@ -51,8 +51,8 @@ float* PoreModel::GetLevelMeansAt(const char *sequence, uint32_t start_position,
   int32_t signal_length = end_position - start_position - kmer_size_ + 1;
   assert(signal_length > 0);
   float *signal = (float*)calloc(signal_length, sizeof(float));
-  uint16_t mask = ((uint16_t)1 << (2 *kmer_size_)) - 1;
-  uint16_t hash_value = GenerateSeedFromSequence(sequence, start_position + signal_length, start_position, kmer_size_);
+  uint32_t mask = ((uint32_t)1 << (2 *kmer_size_)) - 1;
+  uint32_t hash_value = GenerateSeedFromSequence(sequence, start_position + signal_length, start_position, kmer_size_);
   signal[0] = pore_models_[hash_value].level_mean;
   for (uint32_t position = start_position + 1; position < end_position - kmer_size_ + 1; ++position) {
     uint8_t current_base = CharToUint8(sequence[position + kmer_size_]); 
