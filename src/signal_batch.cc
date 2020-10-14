@@ -24,11 +24,21 @@ size_t SignalBatch::LoadAllReadSignals() {
   double real_start_time = GetRealTime();
   size_t num_reads = 0;
   auto dir_list = ListDirectory(signal_directory_);
-  for (const auto& relative_path : dir_list) {
+  for (size_t pi = 0; pi < dir_list.size(); ++pi) {
+    std::string& relative_path = dir_list[pi];
     if (relative_path == "." or relative_path == "..") {
       continue;
     }
     std::string absolute_path = signal_directory_ + "/" + relative_path;
+    if (IsDirectory(absolute_path)) {
+      auto sub_directory_list = ListDirectory(absolute_path);
+      std::vector<std::string> sub_relative_paths;
+      sub_relative_paths.reserve(sub_directory_list.size());
+      for (size_t si = 0; si < sub_directory_list.size(); ++si) {
+        sub_relative_paths.push_back(relative_path + "/" + sub_directory_list[si]);
+      }
+      dir_list.insert(dir_list.end(), sub_relative_paths.begin(), sub_relative_paths.end());
+    }
     bool is_fast5 = absolute_path.find(".fast5") != std::string::npos;
     bool in_map = false;
     //bool in_map = fast5_to_read_name_map.find(fn) != fast5_to_read_name_map.end();
@@ -70,42 +80,42 @@ void SignalBatch::AddSignalsFromFAST5(const std::string &fast5_file_path) {
     //std::string read_name = GetReadNameFromSingleFAST5(fast5_file);
     //AddReadSignal(fast5_file, read_name);
     AddSignalFromSingleFAST5(fast5_file);
-    size_t group_name_length;
-    char *group_name = nullptr;
-    //size_t read_name_length;
-    char *read_name = nullptr;
-    size_t signal_length;
-    float *signal_values;
-    float digitisation;
-    float range;
-    float offset;
-    herr_t fast5_err;
-    float scale;
-    int num_dims;
-    // Get read name length and name
-    // Note that this weird function returns string length when setting buffer to null.
-    // But when reading the name, the buffer size should be set to string length + 1!
-    ssize_t read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, NULL, 0, H5P_DEFAULT);
-    if (read_group_name_length < 0) {
-      ExitWithMessage("The read name length is invalid!\n");
-    }
-    group_name_length = (size_t)read_group_name_length;
-    group_name = (char*)calloc(1 + group_name_length, sizeof(char));
-    read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, group_name, 1 + group_name_length, H5P_DEFAULT);
-    if (read_group_name_length != (ssize_t)group_name_length) {
-      ExitWithMessage("Read name lengths don't match! Failed to load read name.");
-    }
-    // Get read id and use it as read name
-    std::string read_group = std::string(LEGACY_FAST5_RAW_ROOT) + "/" + std::string(group_name);
-    hid_t read_group_id = H5Gopen(fast5_file.hdf5_file, read_group.data(), H5P_DEFAULT);
-    if (read_group_id < 0) {
-      fprintf(stderr, "Failed to open read group %s\n", read_group.data());
-      exit(-1); // TODO(Haowen): fix this later
-    }
-    GetStringAttributeInGroup(read_group_id, "read_id", &read_name);
-    if (std::string(read_name) == "fd966c60-37e2-4ab1-b9ff-6629c8f53545" || std::string(read_name) == "675b6efc-07b7-4d51-9888-92f76cae7626" || std::string(read_name) == "9977c97e-1749-40e0-88e4-2ec74ace2870") {
-      std::cerr << fast5_file_path << "\n";
-    }
+    //size_t group_name_length;
+    //char *group_name = nullptr;
+    ////size_t read_name_length;
+    //char *read_name = nullptr;
+    //size_t signal_length;
+    //float *signal_values;
+    //float digitisation;
+    //float range;
+    //float offset;
+    //herr_t fast5_err;
+    //float scale;
+    //int num_dims;
+    //// Get read name length and name
+    //// Note that this weird function returns string length when setting buffer to null.
+    //// But when reading the name, the buffer size should be set to string length + 1!
+    //ssize_t read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, NULL, 0, H5P_DEFAULT);
+    //if (read_group_name_length < 0) {
+    //  ExitWithMessage("The read name length is invalid!\n");
+    //}
+    //group_name_length = (size_t)read_group_name_length;
+    //group_name = (char*)calloc(1 + group_name_length, sizeof(char));
+    //read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, group_name, 1 + group_name_length, H5P_DEFAULT);
+    //if (read_group_name_length != (ssize_t)group_name_length) {
+    //  ExitWithMessage("Read name lengths don't match! Failed to load read name.");
+    //}
+    //// Get read id and use it as read name
+    //std::string read_group = std::string(LEGACY_FAST5_RAW_ROOT) + "/" + std::string(group_name);
+    //hid_t read_group_id = H5Gopen(fast5_file.hdf5_file, read_group.data(), H5P_DEFAULT);
+    //if (read_group_id < 0) {
+    //  fprintf(stderr, "Failed to open read group %s\n", read_group.data());
+    //  exit(-1); // TODO(Haowen): fix this later
+    //}
+    //GetStringAttributeInGroup(read_group_id, "read_id", &read_name);
+    //if (std::string(read_name) == "fd966c60-37e2-4ab1-b9ff-6629c8f53545" || std::string(read_name) == "675b6efc-07b7-4d51-9888-92f76cae7626" || std::string(read_name) == "9977c97e-1749-40e0-88e4-2ec74ace2870") {
+    //  std::cerr << fast5_file_path << "\n";
+    //}
   }
   CloseFAST5(fast5_file);
 }
@@ -146,8 +156,8 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
     exit(-1); // TODO(Haowen): fix this later
   }
   GetStringAttributeInGroup(read_group_id, "read_id", &read_name);
-  if (std::string(read_name) == "ed2d854d-ecdf-493a-aa19-ae2988a467f3" || std::string(read_name) == "2e7d37d3-69c2-440f-84f4-b32967495cf4") {
-  } 
+  fast5_err = H5Gclose(read_group_id);
+  assert(fast5_err >= 0);
   // Get channel parameters
   const char *channel_id_group = "/UniqueGlobalKey/channel_id";
   hid_t channel_id_group_id = H5Gopen(fast5_file.hdf5_file, channel_id_group, H5P_DEFAULT);
@@ -188,13 +198,11 @@ void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
   // convert to pA
   scale = range / digitisation;
   for (size_t i = 0; i < signal_length; i++) {
-    //if (signal_values[i] (signal_values[i] + offset) * scale > 30 && signal_values[i] (signal_values[i] + offset) * scale < 200) {
     if ((signal_values[i] + offset) * scale > 30 && (signal_values[i] + offset) * scale < 200) {
       signal_values[valid_signal_length] = (signal_values[i] + offset) * scale;
       ++valid_signal_length;
     }
   }
-  //signal_length = valid_signal_length > 12000 ? 12000 : valid_signal_length;
   signals_.emplace_back(Signal{read_name, digitisation, range, offset, signal_length, signal_values, NULL});
 cleanup4:
   H5Sclose(dataspace_id);
