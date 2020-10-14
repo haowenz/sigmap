@@ -407,15 +407,18 @@ void Sigmap::StreamingMap() {
     std::cerr << "mapping read " << read_signal_index << ".\n";
     //read_signal_batch.MovingMedianSignalAt(read_signal_index, 8);
     //read_signal_batch.NormalizeSignalAt(read_signal_index);
+    uint32_t bp_per_sec = 450;
     uint32_t sample_rate = 4000;
+    uint32_t chunk_size = 4000;
     size_t signal_length = read_signal_batch.GetSignalLengthAt(read_signal_index);
-    size_t num_chunks =  signal_length / sample_rate;
+    size_t num_chunks =  signal_length / chunk_size;
     chains.clear();
     uint32_t num_events = 0;
-    for (uint32_t chunk_index = 0; chunk_index < num_chunks; ++chunk_index) {
+    uint32_t chunk_index = 0;
+    for (chunk_index = 0; chunk_index < num_chunks; ++chunk_index) {
       read_feature_signal.clear();
-      size_t signal_start = sample_rate * chunk_index;
-      size_t signal_end = sample_rate * (chunk_index + 1);
+      size_t signal_start = chunk_size * chunk_index;
+      size_t signal_end = chunk_size * (chunk_index + 1);
       if (signal_end > signal_length) {
         signal_end = signal_length;
       }
@@ -424,22 +427,23 @@ void Sigmap::StreamingMap() {
         float search_radius = 0.08;
         int read_signal_point_cloud_step_size = 1;
         reference_spatial_index.GenerateChains(read_feature_signal, num_events, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
+        num_events += read_feature_signal.size();
         if (chains.size() >= 2) {
-          if (chains[0].score / chains[1].score >= 1.85) {
+          if (chains[0].score / chains[1].score >= 1.5) {
             break;
           }
-        } else if (chains.size() == 1 && chains[0].num_anchors >= 8) {
-          if (chunk_index >= 2) {
+        } else if (chains.size() == 1 && chains[0].num_anchors >= 10) {
+          if (chunk_index >= 0) {
             break;
           }
         }
       }
-      num_events += read_feature_signal.size();
     }
+    float read_position_scale =  ((float)chunk_index * chunk_size / num_events) / ((float)sample_rate / bp_per_sec);
     // Save results in vector and output PAF
     double mapping_time = GetRealTime() - real_mapping_start_time;
     std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
-    if (chains.size() > 0) {
+    if ((chains.size() >= 2 && chains[0].score / chains[1].score >= 1.2) || (chains.size() == 1 && chains[0].num_anchors >= 10)) {
       float anchor_ref_gap_avg_length = 0;
       float anchor_read_gap_avg_length = 0;
       float average_anchor_distance = 0;
@@ -456,6 +460,7 @@ void Sigmap::StreamingMap() {
       anchor_read_gap_avg_length /= chains[0].num_anchors;
       std::string tags;
       tags.append("mt:f:" + std::to_string(mapping_time * 1000));
+      tags.append("\tci:i:" + std::to_string(chunk_index + 1));
       tags.append("\tsl:i:" + std::to_string(read_signal_batch.GetSignalLengthAt(read_signal_index)));
       tags.append("\tcm:i:" + std::to_string(chains[0].num_anchors));
       tags.append("\ts1:f:" + std::to_string(chains[0].score));
@@ -463,7 +468,7 @@ void Sigmap::StreamingMap() {
       tags.append("\tad:f:" + std::to_string(average_anchor_distance));
       tags.append("\tat:f:" + std::to_string(anchor_ref_gap_avg_length));
       tags.append("\taq:f:" + std::to_string(anchor_read_gap_avg_length));
-      mappings_on_diff_ref_seqs[chains[0].reference_sequence_index].emplace_back(PAFMapping{(uint32_t)read_signal_index, std::string(read_signal_batch.GetSignalNameAt(read_signal_index)), (uint32_t)read_feature_signal.size(), chains[0].anchors.back().query_position, chains[0].anchors[0].query_position, chains[0].direction == Positive ? (uint32_t)chains[0].start_position : (uint32_t)(reference_sequence_batch.GetSequenceLengthAt(chains[0].reference_sequence_index) + 1 - chains[0].end_position), (uint32_t)(chains[0].end_position - chains[0].start_position + 1), chains[0].mapq, chains[0].direction == Positive ? (uint8_t)1 : (uint8_t)0, (uint8_t)1, tags});
+      mappings_on_diff_ref_seqs[chains[0].reference_sequence_index].emplace_back(PAFMapping{(uint32_t)read_signal_index, std::string(read_signal_batch.GetSignalNameAt(read_signal_index)), (uint32_t)read_signal_batch.GetSignalLengthAt(read_signal_index), (uint32_t)(read_position_scale * chains[0].anchors.back().query_position), (uint32_t)(read_position_scale * chains[0].anchors[0].query_position), chains[0].direction == Positive ? (uint32_t)chains[0].start_position : (uint32_t)(reference_sequence_batch.GetSequenceLengthAt(chains[0].reference_sequence_index) + 1 - chains[0].end_position), (uint32_t)(chains[0].end_position - chains[0].start_position + 1), chains[0].mapq, chains[0].direction == Positive ? (uint8_t)1 : (uint8_t)0, (uint8_t)1, tags});
 #ifdef DEBUG
       for (size_t i = 0; i < chains.size(); ++i) {
         if (chains[i].direction == Positive) {
@@ -490,7 +495,7 @@ void Sigmap::StreamingMap() {
       tags.append("\tcm:i:" + std::to_string(0));
       tags.append("\ts1:f:" + std::to_string(0));
       tags.append("\ts2:f:" + std::to_string(0));
-      mappings_on_diff_ref_seqs[0].emplace_back(PAFMapping{(uint32_t)read_signal_index, std::string(read_signal_batch.GetSignalNameAt(read_signal_index)), (uint32_t)read_feature_signal.size(), 0, 0, 0, 0, 61, (uint8_t)0, (uint8_t)1, tags});
+      mappings_on_diff_ref_seqs[0].emplace_back(PAFMapping{(uint32_t)read_signal_index, std::string(read_signal_batch.GetSignalNameAt(read_signal_index)), (uint32_t)read_signal_batch.GetSignalLengthAt(read_signal_index), 0, 0, 0, 0, 61, (uint8_t)0, (uint8_t)1, tags});
     }
   } // end of task loop
   } // end of openmp single

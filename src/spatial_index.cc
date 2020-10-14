@@ -428,7 +428,7 @@ void SpatialIndex::ComputeMAPQ(std::vector<SignalAnchorChain> &chains) {
 
 void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32_t query_start_offset, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &chains) {
   int max_gap_length = 5000; // TODO(Haowen): make it a parameter
-  int chaining_band_length = 100; // TODO(Haowen): make it a parameter
+  int chaining_band_length = 50; // TODO(Haowen): make it a parameter
   int min_num_anchors = 2; // TODO(Haowen): make it a parameter
   int num_best_chains = 2;
   int num_nearest_points = 500;
@@ -535,7 +535,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
         float distance_coefficient = 1 - 0.2 * anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].distance / search_radius;
         chaining_scores.emplace_back(distance_coefficient * dimension_);
         chaining_predecessors.emplace_back(anchor_index);
-        anchor_is_used.emplace_back(false);
+        anchor_is_used.push_back(false);
         int32_t current_anchor_target_position = anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].target_position;
         int32_t current_anchor_query_position = anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].query_position;
         size_t previous_anchor_index = 0;
