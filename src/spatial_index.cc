@@ -168,13 +168,15 @@ bool compare1(const std::pair<float,size_t> &left, const std::pair<float,size_t>
 //}
 
 void SpatialIndex::GeneratePointCloudOnOneDirection(Direction direction, uint32_t signal_index, const std::vector<std::vector<bool> > &is_masked, const float *signal_values, size_t signal_length, int step_size, std::vector<Point> &point_cloud) {
-  for (size_t signal_position = 0; signal_position < signal_length - dimension_ + 1; signal_position += step_size) {
-    if (!is_masked[signal_index][signal_position]) {
-      if (signal_position == 0 || (signal_position > 0 && abs(signal_values[signal_position] - point_cloud.back().value) > 0.01)) {
-      uint64_t strand = direction == Positive ? 0 : 1;
-      //uint64_t position = ((((uint64_t)signal_index) << 32 | (uint32_t)signal_position) << 1) | strand;
-      uint64_t position = ((((uint64_t)signal_index) << 32 | (uint32_t)signal_position) << 1) | strand;
-      point_cloud.emplace_back(position, signal_values[signal_position]);
+  if (signal_length >= (uint32_t)dimension_) {
+    for (size_t signal_position = 0; signal_position < signal_length - dimension_ + 1; signal_position += step_size) {
+      if (!is_masked[signal_index][signal_position]) {
+        if (signal_position == 0 || point_cloud.empty() || (signal_position > 0 && abs(signal_values[signal_position] - point_cloud.back().value) > 0.01)) {
+          uint64_t strand = direction == Positive ? 0 : 1;
+          //uint64_t position = ((((uint64_t)signal_index) << 32 | (uint32_t)signal_position) << 1) | strand;
+          uint64_t position = ((((uint64_t)signal_index) << 32 | (uint32_t)signal_position) << 1) | strand;
+          point_cloud.emplace_back(position, signal_values[signal_position]);
+        }
       }
     }
   }
