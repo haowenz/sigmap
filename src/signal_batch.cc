@@ -22,8 +22,9 @@ void SignalBatch::FinalizeLoading() {
 
 size_t SignalBatch::LoadAllReadSignals() {
   double real_start_time = GetRealTime();
-  size_t num_reads = 0;
   auto dir_list = ListDirectory(signal_directory_);
+  // two rounds, get all the fast5 absolute paths first and then load reads
+  std::vector<std::string> fast5_list;
   for (size_t pi = 0; pi < dir_list.size(); ++pi) {
     std::string& relative_path = dir_list[pi];
     if (relative_path == "." or relative_path == "..") {
@@ -40,192 +41,101 @@ size_t SignalBatch::LoadAllReadSignals() {
       dir_list.insert(dir_list.end(), sub_relative_paths.begin(), sub_relative_paths.end());
     }
     bool is_fast5 = absolute_path.find(".fast5") != std::string::npos;
-    bool in_map = false;
-    //bool in_map = fast5_to_read_name_map.find(fn) != fast5_to_read_name_map.end();
-    // JTS 04/19: is_directory is painfully slow so we first check if the file is in the name map
-    // if it is, it is definitely not a directory so we can skip the system call
-    //if(!in_map && IsDirectory(absolute_path)) {
-    if(in_map) {
-      // recurse
-      //index_path(read_db, full_fn, fast5_to_read_name_map);
-    } else if (is_fast5) {
-      if (in_map) {
-        //index_file_from_map(read_db, full_fn, fast5_to_read_name_map);
-      } else {
-        AddSignalsFromFAST5(absolute_path);
-        ++num_reads;
-      }
+    if (is_fast5) {
+      fast5_list.emplace_back(absolute_path);
     } else {
       // don't put it into index
     }
   }
-  std::cerr << "Loaded " << num_reads << " reads in " << GetRealTime() - real_start_time << "s.\n";
-  return num_reads;
+  signals_.reserve(fast5_list.size());
+  for (size_t pi = 0; pi < fast5_list.size(); ++pi) {
+    AddSignalsFromFAST5(fast5_list[pi]);
+  }
+  std::cerr << "Loaded " << signals_.size() << " reads in " << GetRealTime() - real_start_time << "s.\n";
+  return signals_.size();
 }
 
 void SignalBatch::AddSignalsFromFAST5(const std::string &fast5_file_path) {
-  FAST5File fast5_file = OpenFAST5(fast5_file_path);
-  if (fast5_file.is_multi_fast5) {
-    ExitWithMessage("Multi-fast5 is not supported yet!");
-    //std::vector<std::string> &read_names = GetReadNamesFromMultiFAST5(fast5_file);
-    //std::string prefix = "read_";
-    //for (size_t read_index = 0; read_index < read_names.size(); ++read_index) {
-    //  std::string &read_name = read_names[read_index];
-    //  if (read_name.find(prefix) == 0) {
-    //    //std::string read_id = group_name.substr(prefix.size());
-    //    //AddReadSignal(fast5_file, read_name);
-    //  }
-    //}
-  } else {
-    //std::string read_name = GetReadNameFromSingleFAST5(fast5_file);
-    //AddReadSignal(fast5_file, read_name);
-    AddSignalFromSingleFAST5(fast5_file);
-    //size_t group_name_length;
-    //char *group_name = nullptr;
-    ////size_t read_name_length;
-    //char *read_name = nullptr;
-    //size_t signal_length;
-    //float *signal_values;
-    //float digitisation;
-    //float range;
-    //float offset;
-    //herr_t fast5_err;
-    //float scale;
-    //int num_dims;
-    //// Get read name length and name
-    //// Note that this weird function returns string length when setting buffer to null.
-    //// But when reading the name, the buffer size should be set to string length + 1!
-    //ssize_t read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, NULL, 0, H5P_DEFAULT);
-    //if (read_group_name_length < 0) {
-    //  ExitWithMessage("The read name length is invalid!\n");
-    //}
-    //group_name_length = (size_t)read_group_name_length;
-    //group_name = (char*)calloc(1 + group_name_length, sizeof(char));
-    //read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, group_name, 1 + group_name_length, H5P_DEFAULT);
-    //if (read_group_name_length != (ssize_t)group_name_length) {
-    //  ExitWithMessage("Read name lengths don't match! Failed to load read name.");
-    //}
-    //// Get read id and use it as read name
-    //std::string read_group = std::string(LEGACY_FAST5_RAW_ROOT) + "/" + std::string(group_name);
-    //hid_t read_group_id = H5Gopen(fast5_file.hdf5_file, read_group.data(), H5P_DEFAULT);
-    //if (read_group_id < 0) {
-    //  fprintf(stderr, "Failed to open read group %s\n", read_group.data());
-    //  exit(-1); // TODO(Haowen): fix this later
-    //}
-    //GetStringAttributeInGroup(read_group_id, "read_id", &read_name);
-    //if (std::string(read_name) == "fd966c60-37e2-4ab1-b9ff-6629c8f53545" || std::string(read_name) == "675b6efc-07b7-4d51-9888-92f76cae7626" || std::string(read_name) == "9977c97e-1749-40e0-88e4-2ec74ace2870") {
-    //  std::cerr << fast5_file_path << "\n";
-    //}
+  hdf5_tools::File fast5_file;
+  fast5_file.open(fast5_file_path);
+  // Check format
+  bool is_single = false;
+  std::vector<std::string> fast5_file_groups = fast5_file.list_group("/"); 
+  for (std::string &group : fast5_file_groups) {
+    if (group == "Raw") {
+      is_single = true;
+      break;
+    }
   }
-  CloseFAST5(fast5_file);
+  if (is_single) {
+    for (std::string &read : fast5_file.list_group("/Raw/Reads")) {
+      std::string read_id = "";
+      for (auto a : fast5_file.get_attr_map("/Raw/Reads/" + read)) {
+        if (a.first == "read_id") {
+          read_id = a.second;
+          break;
+        }
+      }
+      if (read_id.empty()) {
+        std::cerr << "Error: failed to find read_id\n";
+        exit(-1);
+      }
+      std::string raw_path = "/Raw/Reads/" + read;
+      std::string ch_path = "/UniqueGlobalKey/channel_id";
+      AddSignal(fast5_file, raw_path, ch_path);
+    }
+  } else {
+    signals_.reserve(signals_.size() + fast5_file_groups.size());
+    for (std::string &read : fast5_file_groups) {
+      std::string raw_path = "/" + read + "/Raw";
+      std::string ch_path =  "/" + read + "/channel_id";
+      AddSignal(fast5_file, raw_path, ch_path);
+    }
+  }
+  fast5_file.close();
 }
 
-void SignalBatch::AddSignalFromSingleFAST5(const FAST5File& fast5_file) {
-  //Signal read_signal = new Signal();
-  size_t group_name_length;
-  char *group_name = nullptr;
-  //size_t read_name_length;
-  char *read_name = nullptr;
-  size_t signal_length;
-  size_t valid_signal_length = 0;
-  float *signal_values;
-  float digitisation;
-  float range;
-  float offset;
-  herr_t fast5_err;
-  float scale;
-  int num_dims;
-  // Get read name length and name
-  // Note that this weird function returns string length when setting buffer to null.
-  // But when reading the name, the buffer size should be set to string length + 1!
-  ssize_t read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, NULL, 0, H5P_DEFAULT);
-  if (read_group_name_length < 0) {
-    ExitWithMessage("The read name length is invalid!\n");
+void SignalBatch::AddSignal(const hdf5_tools::File &file, const std::string &raw_path, const std::string &ch_path) {
+  std::string id;
+  for (auto a : file.get_attr_map(raw_path)) {
+    if (a.first == "read_id") {
+      id = a.second;
+    } else if (a.first == "read_number") {
+      //number = atoi(a.second.c_str());
+    } else if (a.first == "start_time") {
+      //start_sample = atoi(a.second.c_str());
+    }
   }
-  group_name_length = (size_t)read_group_name_length;
-  group_name = (char*)calloc(1 + group_name_length, sizeof(char));
-  read_group_name_length = H5Lget_name_by_idx(fast5_file.hdf5_file, LEGACY_FAST5_RAW_ROOT, H5_INDEX_NAME, H5_ITER_INC, 0, group_name, 1 + group_name_length, H5P_DEFAULT);
-  if (read_group_name_length != (ssize_t)group_name_length) {
-    ExitWithMessage("Read name lengths don't match! Failed to load read name.");
+
+  float digitisation = 0, range = 0, offset = 0;
+  for (auto a : file.get_attr_map(ch_path)) {
+    if (a.first == "channel_number") {
+      //channel_idx = atoi(a.second.c_str()) - 1;
+    } else if (a.first == "digitisation") {
+      digitisation = atof(a.second.c_str());
+    } else if (a.first == "range") {
+      range = atof(a.second.c_str());
+    } else if (a.first == "offset") {
+      offset = atof(a.second.c_str());
+    }
   }
-  // Get read id and use it as read name
-  std::string read_group = std::string(LEGACY_FAST5_RAW_ROOT) + "/" + std::string(group_name);
-  hid_t read_group_id = H5Gopen(fast5_file.hdf5_file, read_group.data(), H5P_DEFAULT);
-  if (read_group_id < 0) {
-    fprintf(stderr, "Failed to open read group %s\n", read_group.data());
-    exit(-1); // TODO(Haowen): fix this later
-  }
-  GetStringAttributeInGroup(read_group_id, "read_id", &read_name);
-  fast5_err = H5Gclose(read_group_id);
-  assert(fast5_err >= 0);
-  // Get channel parameters
-  const char *channel_id_group = "/UniqueGlobalKey/channel_id";
-  hid_t channel_id_group_id = H5Gopen(fast5_file.hdf5_file, channel_id_group, H5P_DEFAULT);
-  if (channel_id_group_id < 0) {
-    fprintf(stderr, "Failed to open channel_id group %s\n", channel_id_group);
-    exit(-1); // TODO(Haowen): fix this later
-  }
-  digitisation = GetFloatAttributeInGroup(channel_id_group_id, "digitisation");
-  range = GetFloatAttributeInGroup(channel_id_group_id, "range");
-  offset = GetFloatAttributeInGroup(channel_id_group_id, "offset");
-  //scaling.sample_rate = GetFloatAttributeInGroup(channel_id_group_id, "sampling_rate");
-  fast5_err = H5Gclose(channel_id_group_id);
-  assert(fast5_err >= 0);
-  // Get raw signal and convert it into current
-  std::string read_signal_dataset = std::string(LEGACY_FAST5_RAW_ROOT) + "/" + std::string(group_name) + "/Signal";
-  hid_t dataset_id = H5Dopen(fast5_file.hdf5_file, read_signal_dataset.c_str(), H5P_DEFAULT);
-  if (dataset_id < 0) {
-    fprintf(stderr, "Failed to open dataset '%s' to read signal from.\n", read_signal_dataset.c_str());
-    return;
-  }
-  // Get an identifier for a copy of the dataspace for a dataset.
-  hid_t dataspace_id = H5Dget_space(dataset_id);
-  if (dataspace_id < 0) {
-    fprintf(stderr, "Failed to create copy of dataspace for signal %s.\n", read_signal_dataset.c_str());
-    goto cleanup3;
-  }
-  hsize_t first_dimension_size;
-  num_dims = H5Sget_simple_extent_dims(dataspace_id, &first_dimension_size, NULL);
-  assert(num_dims == 1); // There should be 1 dimension and the size of that dimension is the signal length
-  signal_length = first_dimension_size;
-  signal_values = (float*)calloc(signal_length, sizeof(float));
-  fast5_err = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, signal_values);
-  if (fast5_err < 0) {
-    fprintf(stderr, "Failed to load read signal data from dataset %s.\n", read_signal_dataset.c_str());
-    free(signal_values);
-    goto cleanup4;
-  }
+
+  std::string sig_path = raw_path + "/Signal";
+  std::vector<float> signal_values; 
+  file.read(sig_path, signal_values);
   // convert to pA
-  scale = range / digitisation;
-  for (size_t i = 0; i < signal_length; i++) {
+  uint32_t valid_signal_length = 0;
+  float scale = range / digitisation;
+  for (size_t i = 0; i < signal_values.size(); i++) {
     if ((signal_values[i] + offset) * scale > 30 && (signal_values[i] + offset) * scale < 200) {
       signal_values[valid_signal_length] = (signal_values[i] + offset) * scale;
       ++valid_signal_length;
     }
   }
-  signals_.emplace_back(Signal{read_name, digitisation, range, offset, signal_length, signal_values, NULL});
-cleanup4:
-  H5Sclose(dataspace_id);
-cleanup3:
-  H5Dclose(dataset_id);
-  //std::cerr << "Read name: " << name << ", # signal points: " << signal_length << ".\n";
-}
-
-void SignalBatch::MovingMedianSignalAt(size_t signal_index, int window_size) {
-  std::vector<float> tmp_signal((signals_[signal_index]).signal_values, (signals_[signal_index]).signal_values + (signals_[signal_index]).signal_length);
-  std::vector<float> window_signal;
-  for (size_t position = 0; position < signals_[signal_index].signal_length - window_size + 1; ++position) {
-    window_signal.clear();
-    for (int wi = 0; wi < window_size; ++wi) {
-      window_signal.push_back(tmp_signal[position + wi]);
-    }
-    std::sort(window_signal.begin(), window_signal.end());
-    if (window_size % 2 == 0) {
-      signals_[signal_index].signal_values[position] = (window_signal[window_size / 2 - 1] + window_signal[window_size / 2]) / 2;
-    } else {
-      signals_[signal_index].signal_values[position] = window_signal[window_size / 2];
-    }
+  if (valid_signal_length < signal_values.size()) {
+    signal_values.erase(signal_values.begin() + valid_signal_length, signal_values.end());
   }
+  signals_.emplace_back(Signal{id, digitisation, range, offset, signal_values, std::vector<float>()});
 }
 
 void SignalBatch::NormalizeSignalAt(size_t signal_index) {
@@ -245,20 +155,20 @@ void SignalBatch::NormalizeSignalAt(size_t signal_index) {
   //}
   // Calculate mean
   float mean = 0;
-  for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
-    mean += ((signals_[signal_index]).signal_values)[i];//signal_values[i];
+  for (size_t i = 0; i < signals_[signal_index].GetSignalLength(); ++i) {
+    mean += signals_[signal_index].signal_values[i];
   }
-  mean /= signals_[signal_index].signal_length;//signal_length;
+  mean /= signals_[signal_index].signal_values.size();
   // Calculate standard deviation
-  float SD = 0;
-  for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
-    SD += (((signals_[signal_index]).signal_values)[i] - mean) * (((signals_[signal_index]).signal_values)[i] - mean);
+  float stdv = 0;
+  for (size_t i = 0; i < signals_[signal_index].GetSignalLength(); ++i) {
+    stdv += (signals_[signal_index].signal_values[i] - mean) * (signals_[signal_index].signal_values[i] - mean);
   }
-  SD /= (signals_[signal_index].signal_length - 1);
-  SD = sqrt(SD); 
+  stdv /= (signals_[signal_index].signal_values.size() - 1);
+  stdv = sqrt(stdv); 
   // Now we can normalize signal
-  for (size_t i = 0; i < signals_[signal_index].signal_length; ++i) {
-    ((signals_[signal_index]).signal_values)[i] = (((signals_[signal_index]).signal_values)[i] - mean) / SD;
+  for (size_t i = 0; i < signals_[signal_index].signal_values.size(); ++i) {
+    signals_[signal_index].signal_values[i] = (signals_[signal_index].signal_values[i] - mean) / stdv;
   }
 }
 
@@ -266,11 +176,10 @@ void SignalBatch::ConvertSequencesToSignals(const SequenceBatch &sequence_batch,
   double real_start_time = GetRealTime();
   for (size_t sequence_index = 0; sequence_index < num_sequences; ++sequence_index) {
     size_t sequence_length = sequence_batch.GetSequenceLengthAt(sequence_index);
-    float *signal_values = pore_model.GetLevelMeansAt(sequence_batch.GetSequenceAt(sequence_index), 0, sequence_length);
-    float *negative_signal_values = pore_model.GetLevelMeansAt(sequence_batch.GetNegativeSequenceAt(sequence_index).data(), 0, sequence_length);
-    char *name =  (char*)calloc(1 + sequence_batch.GetSequenceNameLengthAt(sequence_index), sizeof(char));
-    strcpy(name, sequence_batch.GetSequenceNameAt(sequence_index));
-    signals_.emplace_back(Signal{name, 0, 0, 0, sequence_length - pore_model.GetKmerSize() + 1, signal_values, negative_signal_values});
+    std::vector<float> signal_values = pore_model.GetLevelMeansAt(sequence_batch.GetSequenceAt(sequence_index), 0, sequence_length);
+    std::vector<float> negative_signal_values = pore_model.GetLevelMeansAt(sequence_batch.GetNegativeSequenceAt(sequence_index).data(), 0, sequence_length);
+    std::string signal_id(sequence_batch.GetSequenceNameAt(sequence_index));
+    signals_.emplace_back(Signal{signal_id, 0, 0, 0, signal_values, negative_signal_values});
   }
   std::cerr << "Convert " << num_sequences << " sequences to signals in " << GetRealTime() - real_start_time << "s.\n";
 }

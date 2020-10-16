@@ -46,14 +46,15 @@ void PoreModel::Print() {
 }
 
 // This funtion return a array of level means given the [start, end) positions (0-based).
-float* PoreModel::GetLevelMeansAt(const char *sequence, uint32_t start_position, uint32_t end_position) const { 
+std::vector<float> PoreModel::GetLevelMeansAt(const char *sequence, uint32_t start_position, uint32_t end_position) const { 
   // Note that the start and end positions should be checked before calling this function
   int32_t signal_length = end_position - start_position - kmer_size_ + 1;
   assert(signal_length > 0);
-  float *signal = (float*)calloc(signal_length, sizeof(float));
+  std::vector<float> signal_values;
+  signal_values.reserve(signal_length);
   uint32_t mask = ((uint32_t)1 << (2 *kmer_size_)) - 1;
   uint32_t hash_value = GenerateSeedFromSequence(sequence, start_position + signal_length, start_position, kmer_size_);
-  signal[0] = pore_models_[hash_value].level_mean;
+  signal_values.emplace_back(pore_models_[hash_value].level_mean);
   for (uint32_t position = start_position + 1; position < end_position - kmer_size_ + 1; ++position) {
     uint8_t current_base = CharToUint8(sequence[position + kmer_size_]); 
     if (current_base < 4) {
@@ -61,8 +62,8 @@ float* PoreModel::GetLevelMeansAt(const char *sequence, uint32_t start_position,
     } else {
       hash_value = (hash_value << 2) & mask;
     }
-    signal[position] = pore_models_[hash_value].level_mean;
+    signal_values.emplace_back(pore_models_[hash_value].level_mean);
   }
-  return signal;
+  return signal_values;
 }
 } // namespace sigmap

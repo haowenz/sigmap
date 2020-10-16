@@ -198,8 +198,8 @@ void Sigmap::Map() {
   for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
     positive_reference_feature_signals.push_back(std::vector<float>());
     negative_reference_feature_signals.push_back(std::vector<float>());
-    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), positive_reference_feature_signals.back());
-    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).negative_signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), negative_reference_feature_signals.back());
+    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).signal_values.data(), reference_signal_batch.GetSignalLengthAt(reference_signal_index), positive_reference_feature_signals.back());
+    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).negative_signal_values.data(), reference_signal_batch.GetSignalLengthAt(reference_signal_index), negative_reference_feature_signals.back());
   }
   // Load spatial index for reference signals 
   SpatialIndex reference_spatial_index(1000, std::vector<int>(1000,5000), reference_index_file_path_);
@@ -371,8 +371,8 @@ void Sigmap::StreamingMap() {
   for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
     positive_reference_feature_signals.push_back(std::vector<float>());
     negative_reference_feature_signals.push_back(std::vector<float>());
-    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), positive_reference_feature_signals.back());
-    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).negative_signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), negative_reference_feature_signals.back());
+    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).signal_values.data(), reference_signal_batch.GetSignalLengthAt(reference_signal_index), positive_reference_feature_signals.back());
+    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).negative_signal_values.data(), reference_signal_batch.GetSignalLengthAt(reference_signal_index), negative_reference_feature_signals.back());
   }
   // Load spatial index for reference signals 
   SpatialIndex reference_spatial_index(1000, std::vector<int>(1000,5000), reference_index_file_path_);
@@ -604,8 +604,8 @@ void Sigmap::ConstructIndex() {
   for (size_t reference_signal_index = 0; reference_signal_index < num_reference_sequences; ++reference_signal_index) {
     positive_reference_feature_signals.push_back(std::vector<float>());
     negative_reference_feature_signals.push_back(std::vector<float>());
-    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), positive_reference_feature_signals.back());
-    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).negative_signal_values, reference_signal_batch.GetSignalLengthAt(reference_signal_index), negative_reference_feature_signals.back());
+    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).signal_values.data(), reference_signal_batch.GetSignalLengthAt(reference_signal_index), positive_reference_feature_signals.back());
+    GenerateZscoreNormalizedSignal(reference_signal_batch.GetSignalAt(reference_signal_index).negative_signal_values.data(), reference_signal_batch.GetSignalLengthAt(reference_signal_index), negative_reference_feature_signals.back());
   }
   SpatialIndex spatial_index(dimension_, max_leaf_, 1, output_file_path_);
   spatial_index.Construct(positive_reference_feature_signals.size(), positive_is_masked, negative_is_masked, positive_reference_feature_signals, negative_reference_feature_signals);
@@ -617,7 +617,7 @@ void Sigmap::ConstructIndex() {
 void Sigmap::GenerateEvents(size_t start, size_t end, const Signal &signal, std::vector<float> &feature_signal) {
   assert(start >= 0);
   assert(start < end);
-  assert(end <= signal.signal_length);
+  assert(end <= signal.GetSignalLength());
   size_t signal_length = end - start + 1;
   std::vector<float> buffer;
   std::vector<Event> events;
@@ -627,7 +627,7 @@ void Sigmap::GenerateEvents(size_t start, size_t end, const Signal &signal, std:
   std::vector<float> tstat2;
   std::vector<size_t> peaks;
   const DetectorArgs ed_params = event_detection_defaults;
-  DetectEvents(signal.signal_values + start, signal_length, ed_params, prefix_sum, prefix_sum_square, tstat1, tstat2, peaks, events);
+  DetectEvents(signal.signal_values.data() + start, signal_length, ed_params, prefix_sum, prefix_sum_square, tstat1, tstat2, peaks, events);
   feature_signal.clear();
   for (size_t ei = 0; ei < events.size(); ++ei) {
     feature_signal.emplace_back(events[ei].mean);
@@ -648,7 +648,7 @@ void Sigmap::GenerateEvents(size_t start, size_t end, const Signal &signal, std:
 
 void Sigmap::GenerateFeatureSignalUsingCWT(const Signal &signal, float scale0, std::vector<float> &feature_signal, std::vector<size_t> &feature_positions) {
   std::vector<float> buffer;
-  GenerateMADNormalizedSignal(signal.signal_values, signal.signal_length, buffer);
+  GenerateMADNormalizedSignal(signal.signal_values.data(), signal.GetSignalLength(), buffer);
   GenerateCWTSignal(buffer.data(), buffer.size(), scale0, feature_signal);
   buffer.clear();
   float mean = GenerateZscoreNormalizedSignal(feature_signal.data(), feature_signal.size(), buffer);
@@ -749,7 +749,7 @@ void Sigmap::EventsToText() {
     std::vector<size_t> peaks;
     const Signal &read_signal = read_signal_batch.GetSignalAt(i);
     events.clear();
-    DetectEvents(read_signal.signal_values, read_signal.signal_length, ed_params, prefix_sum, prefix_sum_square, tstat1, tstat2, peaks, events);
+    DetectEvents(read_signal.signal_values.data(), read_signal.GetSignalLength(), ed_params, prefix_sum, prefix_sum_square, tstat1, tstat2, peaks, events);
     std::vector<float> buffer;
     std::vector<float> normalized_events;
     for (size_t ei = 0; ei < events.size(); ++ei) {
@@ -776,11 +776,11 @@ void Sigmap::FAST5ToText() {
   for (size_t i = 0; i < num_loaded_read_signals; ++i) {
     const Signal &read_signal = read_signal_batch.GetSignalAt(i);
     //fprintf(output_file, "%s\t", read_signal.name);
-    for (size_t signal_position = 0; signal_position < read_signal.signal_length - 1; ++signal_position) {
+    for (size_t signal_position = 0; signal_position < read_signal.signal_values.size() - 1; ++signal_position) {
       //fprintf(output_file, "%f\t", read_signal.signal_values[signal_position]);
       fprintf(output_file, "%f\n", read_signal.signal_values[signal_position]);
     }
-    fprintf(output_file, "%f\n", read_signal.signal_values[read_signal.signal_length - 1]);
+    fprintf(output_file, "%f\n", read_signal.signal_values[read_signal.signal_values.size() - 1]);
   }
   fclose(output_file);
   read_signal_batch.FinalizeLoading();
@@ -811,8 +811,8 @@ float Sigmap::sDTW(const float *target_signal_values, size_t target_length, cons
 
 float Sigmap::sDTW(const Signal &target_signal, const Signal &query_signal) {
   double real_start_time = GetRealTime();
-  size_t query_length = query_signal.signal_length;
-  size_t target_length = target_signal.signal_length;
+  size_t query_length = query_signal.GetSignalLength();
+  size_t target_length = target_signal.GetSignalLength();
   float min_cost = std::numeric_limits<float>::max();
   size_t mapping_end_position = 0;
   std::vector<float> previous_row(query_length + 1, std::numeric_limits<float>::max());
