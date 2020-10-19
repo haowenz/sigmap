@@ -240,7 +240,7 @@ void Sigmap::Map() {
 #pragma omp taskloop //grainsize(grain_size) //num_tasks(num_threads_* 50)
   for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
     double real_mapping_start_time = GetRealTime();
-    std::cerr << "mapping read " << read_signal_index << ".\n";
+    //std::cerr << "mapping read " << read_signal_index << ".\n";
     read_feature_signal.clear();
     //read_signal_batch.MovingMedianSignalAt(read_signal_index, 8);
     //read_signal_batch.NormalizeSignalAt(read_signal_index);
@@ -404,18 +404,19 @@ void Sigmap::StreamingMap() {
 #pragma omp taskloop
   for (size_t read_signal_index = 0; read_signal_index < num_loaded_read_signals; ++read_signal_index) {
     double real_mapping_start_time = GetRealTime();
-    std::cerr << "mapping read " << read_signal_index << ".\n";
+    //std::cerr << "mapping read " << read_signal_index << ".\n";
     //read_signal_batch.MovingMedianSignalAt(read_signal_index, 8);
     //read_signal_batch.NormalizeSignalAt(read_signal_index);
     uint32_t bp_per_sec = 450;
     uint32_t sample_rate = 4000;
     uint32_t chunk_size = 4000;
+    uint32_t max_num_chunks = 60;
     size_t signal_length = read_signal_batch.GetSignalLengthAt(read_signal_index);
     size_t num_chunks =  signal_length / chunk_size;
     chains.clear();
     uint32_t num_events = 0;
     uint32_t chunk_index = 0;
-    for (chunk_index = 0; chunk_index < num_chunks; ++chunk_index) {
+    for (chunk_index = 0; chunk_index < num_chunks && chunk_index < max_num_chunks; ++chunk_index) {
       read_feature_signal.clear();
       size_t signal_start = chunk_size * chunk_index;
       size_t signal_end = chunk_size * (chunk_index + 1);
@@ -439,7 +440,7 @@ void Sigmap::StreamingMap() {
         }
       }
     }
-    float read_position_scale =  ((float)chunk_index * chunk_size / num_events) / ((float)sample_rate / bp_per_sec);
+    float read_position_scale =  ((float)(chunk_index + 1) * chunk_size / num_events) / ((float)sample_rate / bp_per_sec);
     // Save results in vector and output PAF
     double mapping_time = GetRealTime() - real_mapping_start_time;
     std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
