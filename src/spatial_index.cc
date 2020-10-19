@@ -429,11 +429,14 @@ void SpatialIndex::ComputeMAPQ(std::vector<SignalAnchorChain> &chains) {
 }
 
 void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32_t query_start_offset, int query_point_cloud_step_size, float search_radius, size_t num_target_signals, std::vector<SignalAnchorChain> &chains) {
-  int max_gap_length = 5000; // TODO(Haowen): make it a parameter
-  int chaining_band_length = 50; // TODO(Haowen): make it a parameter
+  int max_gap_length = 2000; // TODO(Haowen): make it a parameter
+  int max_target_gap_length = 5000; // TODO(Haowen): make it a parameter
+  int chaining_band_length = 5000; // TODO(Haowen): make it a parameter
+  int max_num_skips = 25; // TODO(Haowen): make it a parameter
   int min_num_anchors = 2; // TODO(Haowen): make it a parameter
-  int num_best_chains = 2;
-  int num_nearest_points = 500;
+  int num_best_chains = 3;
+  int num_nearest_points = 1000;
+  float min_chaining_score = 10;
   std::vector<SignalAnchorChain> previous_chains;
   previous_chains.swap(chains);
   std::vector<std::vector<std::vector<SignalAnchor> > > anchors_on_diff_signals(2);
@@ -446,6 +449,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
       int strand = previous_chains[chain_index].direction == Positive ? 0 : 1;
       uint32_t reference_sequence_index = previous_chains[chain_index].reference_sequence_index;
       assert(previous_chains[chain_index].num_anchors == previous_chains[chain_index].anchors.size());
+      anchors_on_diff_signals[strand][reference_sequence_index].reserve(previous_chains[chain_index].num_anchors);
       for (uint32_t anchor_index = 0; anchor_index < previous_chains[chain_index].num_anchors; ++anchor_index) {
         anchors_on_diff_signals[strand][reference_sequence_index].emplace_back(previous_chains[chain_index].anchors[anchor_index]);
       }
@@ -456,6 +460,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
   std::vector<std::pair<size_t, float> > point_anchors;
   // Find reliable seeds
   std::vector<std::pair<float, size_t> > mean_diff_position;
+  mean_diff_position.reserve(query_signal.size() - dimension_ + 1);
   for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; ++pi) {
     float min_diff = std::numeric_limits<float>::max();
     for (int di = 1; di < dimension_; ++di) {
@@ -468,8 +473,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
   }
   std::sort(mean_diff_position.begin(), mean_diff_position.end(), compare1);
   // Collect anchors
-  //for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; pi += query_point_cloud_step_size) {
-  uint32_t previous_position = 0;
+  //uint32_t previous_position = 0;
   uint32_t num_positions = 0;
   for (uint32_t pi = 0; pi < query_signal.size() - dimension_ + 1; ++pi) {
     uint32_t position = mean_diff_position[pi].second;
@@ -486,7 +490,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
     size_t num_point_anchors = spatial_index_->index->radiusSearch(query_signal.data() + position, search_radius, point_anchors, params);
     //std::cout << "radiusSearch(): radius=" << search_radius << " -> " << num_point_anchors << " matches\n";
     //for (size_t ai = 0; ai < num_results; ai++) {
-    float previous_distance = dimension_;
+    //float previous_distance = dimension_;
     for (size_t ai = 0; ai < num_point_anchors && ai < (uint32_t)num_nearest_points; ai++) {
       //if (point_anchors[ai].second > previous_distance * 2) {
       //  break;
@@ -504,14 +508,14 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
         negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position + query_start_offset, point_anchors[ai].second});
         //negative_anchors_on_diff_signals[target_signal_index].emplace_back(SignalAnchor{target_signal_position, position, out_dists_sqr[ai]});
       }
-      previous_distance = point_anchors[ai].second;
+      //previous_distance = point_anchors[ai].second;
       //std::cout << "idx["<< ai << "]=" << point_anchors[ai].first << " dist["<< ai << "]=" << point_anchors[ai].second << std::endl;
     }
     ++num_positions;
     if (num_positions >= (query_signal.size() - dimension_ + 1) / query_point_cloud_step_size) {
       break;
     }
-    previous_position = position;
+    //previous_position = position;
   }
   // Sort the anchors based on their occurrence on target signal
   for (size_t target_signal_index = 0; target_signal_index < num_target_signals; ++target_signal_index) {
@@ -520,19 +524,16 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
   }
   // Chaining DP done on each individual target signal
   float max_chaining_score = std::numeric_limits<float>::min();
-  //uint32_t max_chain_end_anchor_index = 0;
-  //uint32_t max_chain_target_signal_index = 0;
-  //uint32_t max_chain_num_anchors = 0;
-  //uint32_t max_chain_start_anchor_index = 0;
-  //Direction max_chain_direction = Positive;
-  //bool max_chain_is_updated = false;
   for (size_t target_signal_index = 0; target_signal_index < num_target_signals; ++target_signal_index) {
     for (int direction_i = 0; direction_i < 2; ++direction_i) {
-      //max_chain_is_updated = false;
       std::vector<float> chaining_scores;
+      chaining_scores.reserve(anchors_on_diff_signals[direction_i][target_signal_index].size());
       std::vector<size_t> chaining_predecessors;
+      chaining_predecessors.reserve(anchors_on_diff_signals[direction_i][target_signal_index].size());
       std::vector<bool> anchor_is_used;
+      anchor_is_used.reserve(anchors_on_diff_signals[direction_i][target_signal_index].size());
       std::vector<std::pair<float, size_t> > end_anchor_index_chaining_scores;
+      end_anchor_index_chaining_scores.reserve(10);
       for (size_t anchor_index = 0; anchor_index < anchors_on_diff_signals[direction_i][target_signal_index].size(); ++anchor_index) {
         float distance_coefficient = 1 - 0.2 * anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].distance / search_radius;
         chaining_scores.emplace_back(distance_coefficient * dimension_);
@@ -540,11 +541,14 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
         anchor_is_used.push_back(false);
         int32_t current_anchor_target_position = anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].target_position;
         int32_t current_anchor_query_position = anchors_on_diff_signals[direction_i][target_signal_index][anchor_index].query_position;
-        size_t previous_anchor_index = 0;
+        int32_t start_anchor_index = 0;
         if (anchor_index > (size_t)chaining_band_length) {
-          previous_anchor_index = anchor_index - chaining_band_length;
+          start_anchor_index = anchor_index - chaining_band_length;
         }
-        for (; previous_anchor_index < anchor_index; ++previous_anchor_index) {
+        int32_t previous_anchor_index = anchor_index - 1;
+        int32_t num_skips = 0;
+        for (; previous_anchor_index >= start_anchor_index; --previous_anchor_index) {
+          //std::cerr << previous_anchor_index << " " << start_anchor_index << " " << anchor_index << "\n";
           int32_t previous_anchor_target_position = anchors_on_diff_signals[direction_i][target_signal_index][previous_anchor_index].target_position;
           int32_t previous_anchor_query_position = anchors_on_diff_signals[direction_i][target_signal_index][previous_anchor_index].query_position;
           if (previous_anchor_query_position == current_anchor_query_position) {
@@ -553,6 +557,9 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
           if (previous_anchor_target_position == current_anchor_target_position) {
             continue;
           }
+          if (previous_anchor_target_position + max_target_gap_length < current_anchor_target_position) {
+            break;
+          }
           int32_t target_position_diff = current_anchor_target_position - previous_anchor_target_position;
           assert(target_position_diff > 0);
           int32_t query_position_diff = current_anchor_query_position - previous_anchor_query_position;
@@ -560,39 +567,21 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
           //std::cerr << "curr_ai: " << anchor_index << ", adjusted_d: " << dimension_ * distance_coefficient << ", pre_ai: " << previous_anchor_index << ", ";
           //std::cerr << "target_diff: " << target_position_diff << ", query_diff: " << query_position_diff << "\n";
           if (query_position_diff < 0) {
-            current_chaining_score = std::numeric_limits<float>::min();
+            //current_chaining_score = std::numeric_limits<float>::min();
+            continue;
           } else {
             float matching_dimensions = std::min(std::min(target_position_diff, query_position_diff), dimension_) * distance_coefficient;
             int gap_length = std::abs(target_position_diff - query_position_diff);
             float gap_scale = target_position_diff > 0 ?(float)query_position_diff / target_position_diff : 1; 
             float gap_cost = 0;
             if (gap_length != 0) {
-              //if (gap_length < max_gap_length && target_position_diff <= 1000 && query_position_diff <= 1000 * gap_scale && gap_scale < 1.8 && gap_scale > 0.95) { 
               if (gap_length < max_gap_length && gap_scale < 1.8 && gap_scale > 0.90) { 
-                //if (gap_length > target_position_diff) {
-                  //gap_cost = 0.001 * dimension_ * distance_coefficient * gap_length + 0.05 * std::log2(gap_length);
-                //if (gap_scale > 1) {
-                //gap_cost = exp(-1.2 / gap_scale);
-                //}
-                //}
                 current_chaining_score = chaining_scores[previous_anchor_index] + matching_dimensions - gap_cost;
               } else {
                 gap_cost = std::numeric_limits<float>::max();
                 current_chaining_score = std::numeric_limits<float>::min();//chaining_scores[previous_anchor_index] + matching_dimensions - gap_cost;
               }
             }
-            //if (gap_length != 0) {
-            //  if (gap_length < max_gap_length && 0.9 * target_position_diff <= query_position_diff && query_position_diff < 2 * target_position_diff) { 
-            //    if (gap_length > target_position_diff) {
-            //      //gap_cost = 0.001 * dimension_ * distance_coefficient * gap_length + 0.05 * std::log2(gap_length);
-            //      gap_cost = 0.25 * std::log2(gap_length);
-            //    }
-            //    current_chaining_score = chaining_scores[previous_anchor_index] + matching_dimensions - gap_cost;
-            //  } else {
-            //    gap_cost = std::numeric_limits<float>::max();
-            //    current_chaining_score = std::numeric_limits<float>::min();//chaining_scores[previous_anchor_index] + matching_dimensions - gap_cost;
-            //  }
-            //}
             //std::cerr << ", matching_d: " << matching_dimensions;
             //std::cerr << ", gap_len: " << gap_length;
             //std::cerr << ", gap_cost: " << gap_cost;
@@ -601,18 +590,21 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
           if (current_chaining_score > chaining_scores[anchor_index]) {
             chaining_scores[anchor_index] = current_chaining_score;
             chaining_predecessors[anchor_index] = previous_anchor_index;
+            --num_skips;
             //std::cerr << "update_curr_max: " << current_chaining_score << "\n";
+          } else {
+            ++num_skips;
+            if (num_skips > max_num_skips) {
+              break;
+            }
           }
         }
         // Update chain with max score
         if (chaining_scores[anchor_index] > max_chaining_score) {
           max_chaining_score = chaining_scores[anchor_index];
-        //  max_chain_end_anchor_index = anchor_index;
-        //  max_chain_target_signal_index = target_signal_index;
-        //  max_chain_direction = direction_i == 0 ? Positive : Negative;
-        //  max_chain_is_updated = true;
         }
-        if (chaining_scores.back() >= max_chaining_score / 2) {
+        //if (chaining_scores.back() >= max_chaining_score / 2 && chaining_scores.back() >= min_chaining_score) {
+        if (chaining_scores.back() >= min_chaining_score) {
           end_anchor_index_chaining_scores.emplace_back(chaining_scores.back(), anchor_index);
         }
       }
@@ -621,20 +613,10 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
       // Traceback all chains from higest score to lowest
       for (size_t anchor_index = 0; anchor_index < end_anchor_index_chaining_scores.size() && anchor_index < (size_t)num_best_chains; ++anchor_index) {
         TacebackChains(min_num_anchors, direction_i == 0 ? Positive : Negative, end_anchor_index_chaining_scores[anchor_index].second, target_signal_index, chaining_scores, chaining_predecessors, anchors_on_diff_signals[direction_i], anchor_is_used, chains);
-        if (chaining_scores[end_anchor_index_chaining_scores[anchor_index].second] < max_chaining_score / 2) {
+        if (chaining_scores[end_anchor_index_chaining_scores[anchor_index].second] < max_chaining_score / 5) {
           break;
         }
       }
-      //if (max_chain_is_updated) {
-      //  max_chain_start_anchor_index = chaining_predecessors[max_chain_end_anchor_index];
-      //  if (max_chain_start_anchor_index != chaining_predecessors[max_chain_start_anchor_index]) {
-      //    max_chain_num_anchors = 1;
-      //    while (chaining_predecessors[max_chain_start_anchor_index] != max_chain_start_anchor_index) {
-      //      max_chain_start_anchor_index = chaining_predecessors[max_chain_start_anchor_index];
-      //      ++max_chain_num_anchors;
-      //    }
-      //  }
-      //}
     }
   }
   if (chains.size() > 0) {
@@ -643,11 +625,5 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal, uint32
     // Compute MAPQ
     ComputeMAPQ(chains);
   }
-  //if (max_chain_direction == Positive) {
-  //  positive_chains.emplace_back(SignalAnchorChain{max_chaining_score, max_chain_target_signal_index, positive_anchors_on_diff_signals[max_chain_target_signal_index][max_chain_start_anchor_index].target_position, positive_anchors_on_diff_signals[max_chain_target_signal_index][max_chain_end_anchor_index].target_position, max_chain_num_anchors});
-  //} else {
-  //  negative_chains.emplace_back(SignalAnchorChain{max_chaining_score, max_chain_target_signal_index, negative_anchors_on_diff_signals[max_chain_target_signal_index][max_chain_start_anchor_index].target_position, negative_anchors_on_diff_signals[max_chain_target_signal_index][max_chain_end_anchor_index].target_position, max_chain_num_anchors});
-  //}
-  //std::cerr << "Max chaining score: " << max_chaining_score << ", signal_index: " << max_chain_target_signal_index << ", anchor target end postion: " << anchors_on_diff_signals[max_chain_target_signal_index].target_position << ".\n"
 }
 } // namespace sigmap
