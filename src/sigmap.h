@@ -31,7 +31,7 @@ class Sigmap {
   void DTWAlign();
   void CWTAlign();
   // Support functions
-  void GenerateEvents(size_t start, size_t end, const Signal &signal, std::vector<float> &feature_signal);
+  void GenerateEvents(size_t start, size_t end, const Signal &signal, std::vector<float> &feature_signal, std::vector<float> &feature_signal_stdvs);
   void GenerateFeatureSignalUsingCWT(const Signal &signal, float scale0, std::vector<float> &feature_signal, std::vector<size_t> &feature_positions);
   float GenerateMADNormalizedSignal(const float *signal_values, size_t signal_length, std::vector<float> &normalized_signal);
   float GenerateZscoreNormalizedSignal(const float *signal_values, size_t signal_length, std::vector<float> &normalized_signal);

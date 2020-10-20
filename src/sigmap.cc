@@ -231,6 +231,7 @@ void Sigmap::Map() {
 #pragma omp parallel default(none) shared(reference_sequence_batch, positive_reference_feature_signals, negative_reference_feature_signals, reference_spatial_index, read_signal_batch, std::cerr, num_loaded_read_signals, num_reference_sequences, mappings_on_diff_ref_seqs_for_diff_threads) num_threads(num_threads_)
   {
   std::vector<float> read_feature_signal;
+  std::vector<float> read_feature_signal_stdvs;
   std::vector<Point> read_point_cloud;
   std::vector<SignalAnchorChain> chains;
 #pragma omp single
@@ -242,9 +243,10 @@ void Sigmap::Map() {
     double real_mapping_start_time = GetRealTime();
     //std::cerr << "mapping read " << read_signal_index << ".\n";
     read_feature_signal.clear();
+    read_feature_signal_stdvs.clear();
     //read_signal_batch.MovingMedianSignalAt(read_signal_index, 8);
     //read_signal_batch.NormalizeSignalAt(read_signal_index);
-    GenerateEvents(0, read_signal_batch.GetSignalLengthAt(read_signal_index), read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal);
+    GenerateEvents(0, read_signal_batch.GetSignalLengthAt(read_signal_index), read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal, read_feature_signal_stdvs);
     //if (read_feature_signal.size() > 2000) {
     //  read_feature_signal.erase(read_feature_signal.begin() + 2000, read_feature_signal.end());
     //}
@@ -267,7 +269,7 @@ void Sigmap::Map() {
       //  read_signal_point_cloud_step_size = 1;
       //}
       read_signal_point_cloud_step_size = 1;
-      reference_spatial_index.GenerateChains(read_feature_signal, 0, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
+      reference_spatial_index.GenerateChains(read_feature_signal, read_feature_signal_stdvs, 0, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
       // Save results in vector and output PAF
       double mapping_time = GetRealTime() - real_mapping_start_time;
       std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
@@ -398,6 +400,7 @@ void Sigmap::StreamingMap() {
 #pragma omp parallel default(none) shared(reference_sequence_batch, positive_reference_feature_signals, negative_reference_feature_signals, reference_spatial_index, read_signal_batch, std::cerr, num_loaded_read_signals, num_reference_sequences, mappings_on_diff_ref_seqs_for_diff_threads) num_threads(num_threads_)
   {
   std::vector<float> read_feature_signal;
+  std::vector<float> read_feature_signal_stdvs;
   std::vector<SignalAnchorChain> chains;
 #pragma omp single
   {
@@ -418,19 +421,28 @@ void Sigmap::StreamingMap() {
     uint32_t chunk_index = 0;
     for (chunk_index = 0; chunk_index < num_chunks && chunk_index < max_num_chunks; ++chunk_index) {
       read_feature_signal.clear();
+      read_feature_signal_stdvs.clear();
       size_t signal_start = chunk_size * chunk_index;
       size_t signal_end = chunk_size * (chunk_index + 1);
       if (signal_end > signal_length) {
         signal_end = signal_length;
       }
-      GenerateEvents(signal_start, signal_end, read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal);
+      GenerateEvents(signal_start, signal_end, read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal, read_feature_signal_stdvs);
       if (read_feature_signal.size() > 50) {
         float search_radius = 0.08;
-        int read_signal_point_cloud_step_size = 1;
-        reference_spatial_index.GenerateChains(read_feature_signal, num_events, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
+        int read_signal_point_cloud_step_size = 2;
+        reference_spatial_index.GenerateChains(read_feature_signal, read_feature_signal_stdvs, num_events, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
         num_events += read_feature_signal.size();
         if (chains.size() >= 2) {
           if (chains[0].score / chains[1].score >= 1.5) {
+            break;
+          }
+          float mean_chain_score = 0;
+          for (uint32_t chain_index = 0; chain_index < chains.size(); ++chain_index) {
+            mean_chain_score += chains[chain_index].score;
+          }
+          mean_chain_score /= chains.size();
+          if (chains[0].score >= 7 * mean_chain_score) {
             break;
           }
         } else if (chains.size() == 1 && chains[0].num_anchors >= 10) {
@@ -444,7 +456,12 @@ void Sigmap::StreamingMap() {
     // Save results in vector and output PAF
     double mapping_time = GetRealTime() - real_mapping_start_time;
     std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
-    if ((chains.size() >= 2 && chains[0].score / chains[1].score >= 1.2) || (chains.size() == 1 && chains[0].num_anchors >= 10)) {
+    float mean_chain_score = 0;
+    for (uint32_t chain_index = 0; chain_index < chains.size(); ++chain_index) {
+      mean_chain_score += chains[chain_index].score;
+    }
+    mean_chain_score /= chains.size();
+    if ((chains.size() >= 2 && (chains[0].score / chains[1].score >= 1.2 || chains[0].score >= 7 * mean_chain_score)) || (chains.size() == 1 && chains[0].num_anchors >= 10)) {
       float anchor_ref_gap_avg_length = 0;
       float anchor_read_gap_avg_length = 0;
       float average_anchor_distance = 0;
@@ -615,7 +632,7 @@ void Sigmap::ConstructIndex() {
   //yak_ch_destroy(h);
 }
 
-void Sigmap::GenerateEvents(size_t start, size_t end, const Signal &signal, std::vector<float> &feature_signal) {
+void Sigmap::GenerateEvents(size_t start, size_t end, const Signal &signal, std::vector<float> &feature_signal, std::vector<float> &feature_signal_stdvs) {
   assert(start >= 0);
   assert(start < end);
   assert(end <= signal.GetSignalLength());
@@ -640,6 +657,7 @@ void Sigmap::GenerateEvents(size_t start, size_t end, const Signal &signal, std:
     //feature_signal.emplace_back(buffer[i]);
     if (i == 0 || (i >= 1 && (abs(buffer[i] - feature_signal.back()) > 0.1))) {
       feature_signal.emplace_back(buffer[i]);
+      feature_signal_stdvs.emplace_back(events[i].stdv);
     }
   }
 #ifdef DEBUG
