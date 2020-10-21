@@ -129,7 +129,7 @@ void SpatialIndex::TracebackChains(int min_num_anchors, Direction direction, siz
       stop_at_an_used_anchor = true;
     }
     anchor_is_used[chain_start_anchor_index] = true;
-    size_t chain_num_anchors = 1;
+    uint32_t chain_num_anchors = 1;
     while (chaining_predecessors[chain_start_anchor_index] != chain_start_anchor_index && !anchor_is_used[chaining_predecessors[chain_start_anchor_index]]) {
       chain_start_anchor_index = chaining_predecessors[chain_start_anchor_index];
       anchors.push_back(anchors_on_diff_signals[chain_target_signal_index][chain_start_anchor_index]);
@@ -156,15 +156,19 @@ void SpatialIndex::GeneratePrimaryChains(std::vector<SignalAnchorChain> &chains)
   primary_chains.emplace_back(chains[0]);
   for (uint32_t ci = 1; ci < chains.size(); ++ci) {
     bool is_primary = true;
-    for (uint32_t pi = 0; pi < primary_chains.size(); ++pi) {
-      if (chains[ci].reference_sequence_index == primary_chains[pi].reference_sequence_index) {
-        if (std::max(chains[ci].start_position, primary_chains[pi].start_position) > std::min(chains[ci].end_position, primary_chains[pi].end_position)) {
-          //primary_chains[pi].score += chains[ci].score;
-        } else {
-          is_primary = false;
-          break;
-        }
-      } 
+    if (chains[ci].score < primary_chains.back().score / 3) {
+      break;
+    } else {
+      for (uint32_t pi = 0; pi < primary_chains.size(); ++pi) {
+        if (chains[ci].reference_sequence_index == primary_chains[pi].reference_sequence_index) {
+          if (std::max(chains[ci].start_position, primary_chains[pi].start_position) > std::min(chains[ci].end_position, primary_chains[pi].end_position)) {
+            //primary_chains[pi].score += chains[ci].score;
+          } else {
+            is_primary = false;
+            break;
+          }
+        } 
+      }
     }
     if (is_primary) {
       primary_chains.emplace_back(chains[ci]);

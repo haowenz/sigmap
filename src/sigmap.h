@@ -26,6 +26,7 @@ class Sigmap {
   void ConstructIndex();
   // for mapping
   Sigmap(int num_threads, const std::string &reference_file_path, const std::string &pore_model_file_path, const std::string &signal_directory, const std::string &reference_index_file_path, const std::string &output_file_path) : num_threads_(num_threads), reference_file_path_(reference_file_path), pore_model_file_path_(pore_model_file_path), signal_directory_(signal_directory), reference_index_file_path_(reference_index_file_path), output_file_path_(output_file_path) {}
+  Sigmap(int read_seeding_step_size, int num_threads, int stop_mapping_min_num_anchors, int output_mapping_min_num_anchors, float stop_mapping_ratio, float output_mapping_ratio, float stop_mapping_mean_ratio, float output_mapping_mean_ratio, const std::string &reference_file_path, const std::string &pore_model_file_path, const std::string &signal_directory, const std::string &reference_index_file_path, const std::string &output_file_path) : read_seeding_step_size_(read_seeding_step_size), num_threads_(num_threads), stop_mapping_min_num_anchors_(stop_mapping_min_num_anchors), output_mapping_min_num_anchors_(output_mapping_min_num_anchors), stop_mapping_ratio_(stop_mapping_ratio), output_mapping_ratio_(output_mapping_ratio), stop_mapping_mean_ratio_(stop_mapping_mean_ratio), output_mapping_mean_ratio_(output_mapping_mean_ratio), reference_file_path_(reference_file_path), pore_model_file_path_(pore_model_file_path), signal_directory_(signal_directory), reference_index_file_path_(reference_index_file_path), output_file_path_(output_file_path) {}
   void Map();
   void StreamingMap();
   void DTWAlign();
@@ -50,7 +51,14 @@ class Sigmap {
  protected:
   int dimension_;
   int max_leaf_;
+  int read_seeding_step_size_;
   int num_threads_;
+  int stop_mapping_min_num_anchors_;
+  int output_mapping_min_num_anchors_;
+  float stop_mapping_ratio_;
+  float output_mapping_ratio_;
+  float stop_mapping_mean_ratio_;
+  float output_mapping_mean_ratio_;
   std::string reference_file_path_;
   std::string pore_model_file_path_;
   std::string signal_directory_;

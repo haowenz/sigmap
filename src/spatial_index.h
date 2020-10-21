@@ -29,7 +29,7 @@ struct SignalAnchorChain {
   uint32_t reference_sequence_index;
   uint32_t start_position;
   uint32_t end_position;
-  size_t num_anchors;
+  uint32_t num_anchors;
   uint8_t mapq;
   Direction direction;
   //bool is_primary_chain;

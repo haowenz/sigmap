@@ -430,11 +430,10 @@ void Sigmap::StreamingMap() {
       GenerateEvents(signal_start, signal_end, read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal, read_feature_signal_stdvs);
       if (read_feature_signal.size() > 50) {
         float search_radius = 0.08;
-        int read_signal_point_cloud_step_size = 2;
-        reference_spatial_index.GenerateChains(read_feature_signal, read_feature_signal_stdvs, num_events, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
+        reference_spatial_index.GenerateChains(read_feature_signal, read_feature_signal_stdvs, num_events, read_seeding_step_size_, search_radius, num_reference_sequences, chains);
         num_events += read_feature_signal.size();
         if (chains.size() >= 2) {
-          if (chains[0].score / chains[1].score >= 1.5) {
+          if (chains[0].score / chains[1].score >= stop_mapping_ratio_) {
             break;
           }
           float mean_chain_score = 0;
@@ -442,10 +441,10 @@ void Sigmap::StreamingMap() {
             mean_chain_score += chains[chain_index].score;
           }
           mean_chain_score /= chains.size();
-          if (chains[0].score >= 7 * mean_chain_score) {
+          if (chains[0].score >= stop_mapping_mean_ratio_ * mean_chain_score) {
             break;
           }
-        } else if (chains.size() == 1 && chains[0].num_anchors >= 10) {
+        } else if (chains.size() == 1 && chains[0].num_anchors >= (uint32_t)stop_mapping_min_num_anchors_) {
           if (chunk_index >= 0) {
             break;
           }
@@ -461,7 +460,7 @@ void Sigmap::StreamingMap() {
       mean_chain_score += chains[chain_index].score;
     }
     mean_chain_score /= chains.size();
-    if ((chains.size() >= 2 && (chains[0].score / chains[1].score >= 1.2 || chains[0].score >= 7 * mean_chain_score)) || (chains.size() == 1 && chains[0].num_anchors >= 10)) {
+    if ((chains.size() >= 2 && (chains[0].score / chains[1].score >= output_mapping_ratio_ || chains[0].score >= output_mapping_mean_ratio_ * mean_chain_score)) || (chains.size() == 1 && chains[0].num_anchors >= (uint32_t)output_mapping_min_num_anchors_)) {
       float anchor_ref_gap_avg_length = 0;
       float anchor_read_gap_avg_length = 0;
       float average_anchor_distance = 0;
@@ -471,7 +470,6 @@ void Sigmap::StreamingMap() {
           anchor_ref_gap_avg_length += chains[0].anchors[ai].target_position - chains[0].anchors[ai + 1].target_position;
           anchor_read_gap_avg_length += chains[0].anchors[ai].query_position - chains[0].anchors[ai + 1].query_position;
         }
-        //std::cerr << "(" << chains[i].anchors[ai].target_position << "," << chains[i].anchors[ai].query_position << "," << chains[i].anchors[ai].distance << "), ";
       }
       average_anchor_distance /= chains[0].num_anchors;
       anchor_ref_gap_avg_length /= chains[0].num_anchors;
@@ -864,6 +862,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   //  ("build-sig-index", "Build index for signal data directory");
   options.add_options("Mapping")
     ("m,map", "Map signal data")
+    ("step-size", "Seeding step size in reads [1]", cxxopts::value<int>(), "INT")
     ("t,num-threads", "# threads for mapping [1]", cxxopts::value<int>(), "INT");
   options.add_options("Input")
     ("r,ref", "Reference file", cxxopts::value<std::string>(), "FILE")
@@ -874,13 +873,48 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
     //("b,read-file", "Basecalled FASTA/FASTQ read file", cxxopts::value<std::string>());
   options.add_options("Output")
     ("o,output", "Output file", cxxopts::value<std::string>());
+  options.add_options("Development")
+    ("min-num-anchors", "Min # anchors to stop mapping [10]", cxxopts::value<int>(), "INT")
+    ("min-num-anchors-output", "Min # anchors to output mappings [10]", cxxopts::value<int>(), "INT")
+    ("stop-mapping", "The ratio between best and second best chaining score to stop mapping [1.5]", cxxopts::value<float>(), "FLOAT")
+    ("stop-mapping-output", "The ratio between best and second best chaining score to output mappings [1.2]", cxxopts::value<float>(), "FLOAT")
+    ("stop-mapping-mean", "The ratio between best and mean chaining score to stop mapping [7]", cxxopts::value<float>(), "FLOAT")
+    ("stop-mapping-mean-output", "The ratio between best and mean chaining score to output mappings [7]", cxxopts::value<float>(), "FLOAT");
   options.add_options()
     ("h,help", "Print help");
 
   auto result = options.parse(argc, argv);
+  int read_seeding_step_size = 1;
+  if (result.count("step-size")) {
+    read_seeding_step_size = result["step-size"].as<int>();
+  }
   int num_threads = 1;
   if (result.count("t")) {
     num_threads = result["num-threads"].as<int>();
+  }
+  int stop_mapping_min_num_anchors = 10;
+  if (result.count("min-num-anchors")) {
+    stop_mapping_min_num_anchors = result["min-num-anchors"].as<int>();
+  }
+  int output_mapping_min_num_anchors = 10;
+  if (result.count("min-num-anchors-output")) {
+    output_mapping_min_num_anchors = result["min-num-anchors-output"].as<int>();
+  }
+  float stop_mapping_ratio = 1.5;
+  if (result.count("stop-mapping")) {
+    stop_mapping_ratio = result["stop-mapping"].as<float>();
+  }
+  float output_mapping_ratio = 1.2;
+  if (result.count("stop-mapping-output")) {
+    output_mapping_ratio = result["stop-mapping-output"].as<float>();
+  }
+  float stop_mapping_mean_ratio = 7;
+  if (result.count("stop-mapping-mean")) {
+    stop_mapping_mean_ratio = result["stop-mapping-mean"].as<float>();
+  }
+  float output_mapping_mean_ratio = 7;
+  if (result.count("stop-mapping-mean-output")) {
+    output_mapping_mean_ratio = result["stop-mapping-mean-output"].as<float>();
   }
 
   if (result.count("i")) {
@@ -953,7 +987,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
       sigmap::ExitWithMessage("No output file specified!");
     }
     std::cerr << "Output file: " << output_file_path << "\n";
-    Sigmap sigmap_for_mapping(num_threads, reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
+    Sigmap sigmap_for_mapping(read_seeding_step_size, num_threads, stop_mapping_min_num_anchors, output_mapping_min_num_anchors, stop_mapping_ratio, output_mapping_ratio, stop_mapping_mean_ratio, output_mapping_mean_ratio, reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
     //sigmap_for_mapping.CWTAlign();
     //sigmap_for_mapping.DTWAlign();
     //sigmap_for_mapping.Map();
@@ -961,9 +995,9 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
     //sigmap_for_mapping.FAST5ToText();
     //sigmap_for_mapping.EventsToText();
   } else if (result.count("h")) {
-    std::cerr << options.help({"", "Indexing", "Mapping", "Input", "Output"});
+    std::cerr << options.help({"", "Indexing", "Mapping", "Input", "Output", "Development"});
   } else {
-    std::cerr << options.help({"", "Indexing", "Mapping", "Input", "Output"});
+    std::cerr << options.help({"", "Indexing", "Mapping", "Input", "Output", "Development"});
   }
   //std::string read_file_path;
   //if (result.count("b")) {
