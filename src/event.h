@@ -112,7 +112,9 @@ static inline void ComputeTStat(const float *prefix_sum, const float *prefix_sum
 static inline void GeneratePeaksUsingMultiWindows(Detector *short_detector, Detector *long_detector, const float peak_height, std::vector<size_t> &peaks) {
   assert(short_detector->signal_length == long_detector->signal_length);
   size_t ndetector = 2;
-  Detector *detectors[ndetector] = {short_detector, long_detector};
+  Detector *detectors[ndetector];// = {short_detector, long_detector};
+  detectors[0] = short_detector;
+  detectors[1] = long_detector;
   peaks.reserve(short_detector->signal_length);
   for (size_t i = 0; i < short_detector->signal_length; i++) {
     for (size_t k = 0; k < ndetector; k++) {

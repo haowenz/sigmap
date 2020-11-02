@@ -479,8 +479,10 @@ void Sigmap::StreamingMap() {
       tags.append("\tci:i:" + std::to_string(chunk_index + 1));
       tags.append("\tsl:i:" + std::to_string(read_signal_batch.GetSignalLengthAt(read_signal_index)));
       tags.append("\tcm:i:" + std::to_string(chains[0].num_anchors));
+      tags.append("\tnc:i:" + std::to_string(chains.size()));
       tags.append("\ts1:f:" + std::to_string(chains[0].score));
       tags.append("\ts2:f:" + std::to_string(chains.size() > 1 ? chains[1].score : 0));
+      tags.append("\tsm:f:" + std::to_string(mean_chain_score));
       tags.append("\tad:f:" + std::to_string(average_anchor_distance));
       tags.append("\tat:f:" + std::to_string(anchor_ref_gap_avg_length));
       tags.append("\taq:f:" + std::to_string(anchor_read_gap_avg_length));
@@ -508,9 +510,6 @@ void Sigmap::StreamingMap() {
       std::string tags;
       tags.append("mt:f:" + std::to_string(mapping_time * 1000));
       tags.append("\tsl:i:" + std::to_string(read_signal_batch.GetSignalLengthAt(read_signal_index)));
-      tags.append("\tcm:i:" + std::to_string(0));
-      tags.append("\ts1:f:" + std::to_string(0));
-      tags.append("\ts2:f:" + std::to_string(0));
       mappings_on_diff_ref_seqs[0].emplace_back(PAFMapping{(uint32_t)read_signal_index, std::string(read_signal_batch.GetSignalNameAt(read_signal_index)), (uint32_t)read_signal_batch.GetSignalLengthAt(read_signal_index), 0, 0, 0, 0, 61, (uint8_t)0, (uint8_t)1, tags});
     }
   } // end of task loop
@@ -634,7 +633,7 @@ void Sigmap::GenerateEvents(size_t start, size_t end, const Signal &signal, std:
   assert(start >= 0);
   assert(start < end);
   assert(end <= signal.GetSignalLength());
-  size_t signal_length = end - start + 1;
+  size_t signal_length = end - start;
   std::vector<float> buffer;
   std::vector<Event> events;
   std::vector<float> prefix_sum;
@@ -878,8 +877,8 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
     ("min-num-anchors-output", "Min # anchors to output mappings [10]", cxxopts::value<int>(), "INT")
     ("stop-mapping", "The ratio between best and second best chaining score to stop mapping [1.5]", cxxopts::value<float>(), "FLOAT")
     ("stop-mapping-output", "The ratio between best and second best chaining score to output mappings [1.2]", cxxopts::value<float>(), "FLOAT")
-    ("stop-mapping-mean", "The ratio between best and mean chaining score to stop mapping [7]", cxxopts::value<float>(), "FLOAT")
-    ("stop-mapping-mean-output", "The ratio between best and mean chaining score to output mappings [7]", cxxopts::value<float>(), "FLOAT");
+    ("stop-mapping-mean", "The ratio between best and mean chaining score to stop mapping [5]", cxxopts::value<float>(), "FLOAT")
+    ("stop-mapping-mean-output", "The ratio between best and mean chaining score to output mappings [5]", cxxopts::value<float>(), "FLOAT");
   options.add_options()
     ("h,help", "Print help");
 
@@ -908,11 +907,11 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   if (result.count("stop-mapping-output")) {
     output_mapping_ratio = result["stop-mapping-output"].as<float>();
   }
-  float stop_mapping_mean_ratio = 7;
+  float stop_mapping_mean_ratio = 5;
   if (result.count("stop-mapping-mean")) {
     stop_mapping_mean_ratio = result["stop-mapping-mean"].as<float>();
   }
-  float output_mapping_mean_ratio = 7;
+  float output_mapping_mean_ratio = 5;
   if (result.count("stop-mapping-mean-output")) {
     output_mapping_mean_ratio = result["stop-mapping-mean-output"].as<float>();
   }
