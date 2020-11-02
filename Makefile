@@ -1,23 +1,20 @@
-cpp_source=sequence_batch.cc signal_batch.cc pore_model.cc cwt.cc spatial_index.cc sigmap.cc #kthread.cc yak-count.cc#fast_dtw.cc
+cpp_source=sequence_batch.cc signal_batch.cc pore_model.cc cwt.cc spatial_index.cc sigmap.cc
 src_dir=src
 objs_dir=objs
 objs+=$(patsubst %.cc,$(objs_dir)/%.o,$(cpp_source))
 
-#HDF5_INCLUDE_DIR ?= /usr/include/hdf5/serial
-#HDF5_LIB_DIR ?= /usr/lib/x86_64-linux-gnu
-#HDF5_LIB ?= hdf5_serial
-HDF5_DIR ?= /usr/local/pacerepov2/hdf5/1.10.3/intel-18.0
+HDF5_DIR ?= `pwd`/extern/hdf5
 HDF5_INCLUDE_DIR ?= ${HDF5_DIR}/include
 HDF5_LIB_DIR ?= ${HDF5_DIR}/lib
 HDF5_LIB ?= hdf5
 
 cxx=g++
 cxxflags=-std=c++11 -Wall -O3 -fopenmp -march=native -I${HDF5_INCLUDE_DIR}
-ldflags=-L${HDF5_LIB_DIR} -l${HDF5_LIB} -lm -lz# -lpthread
+ldflags=-L${HDF5_LIB_DIR} -Wl,-rpath=${HDF5_LIB_DIR} -l${HDF5_LIB} -lm -lz
 
 exec=sigmap
 
-all: check_hdf5 dir $(exec) 
+all: hdf5 check_hdf5 dir $(exec) 
 
 check_hdf5:
 	@[ -f "${HDF5_INCLUDE_DIR}/H5pubconf.h" ] || { echo "HDF5 headers not found" >&2; exit 1; }
@@ -25,6 +22,11 @@ check_hdf5:
 
 dir:
 	mkdir -p $(objs_dir)
+
+hdf5:
+	cd extern/hdf5;\
+	./configure --enable-threadsafe --disable-hl --libdir=`pwd`/lib --includedir=`pwd`/include --prefix=`pwd`/;\
+	make -j
 
 $(exec): $(objs)
 	$(cxx) $(cxxflags) $(objs) -o $(exec) $(ldflags)

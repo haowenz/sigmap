@@ -1,0 +1,4 @@
+[submodule "extern/hdf5"]
+	path = extern/hdf5
+	url = https://github.com/HDFGroup/hdf5.git
+	branch = 1.10/master
