@@ -413,13 +413,13 @@ void Sigmap::StreamingMap() {
     uint32_t bp_per_sec = 450;
     uint32_t sample_rate = 4000;
     uint32_t chunk_size = 4000;
-    uint32_t max_num_chunks = 60;
+    //uint32_t max_num_chunks = 60;
     size_t signal_length = read_signal_batch.GetSignalLengthAt(read_signal_index);
     size_t num_chunks =  signal_length / chunk_size;
     chains.clear();
     uint32_t num_events = 0;
     uint32_t chunk_index = 0;
-    for (chunk_index = 0; chunk_index < num_chunks && chunk_index < max_num_chunks; ++chunk_index) {
+    for (chunk_index = 0; chunk_index < num_chunks && chunk_index < (uint32_t)max_num_chunks_; ++chunk_index) {
       read_feature_signal.clear();
       read_feature_signal_stdvs.clear();
       size_t signal_start = chunk_size * chunk_index;
@@ -873,6 +873,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   options.add_options("Output")
     ("o,output", "Output file", cxxopts::value<std::string>());
   options.add_options("Development")
+    ("max-num-chunks", "Max # chunks before stop trying to map a read [60]", cxxopts::value<int>(), "INT")
     ("min-num-anchors", "Min # anchors to stop mapping [10]", cxxopts::value<int>(), "INT")
     ("min-num-anchors-output", "Min # anchors to output mappings [10]", cxxopts::value<int>(), "INT")
     ("stop-mapping", "The ratio between best and second best chaining score to stop mapping [1.5]", cxxopts::value<float>(), "FLOAT")
@@ -890,6 +891,10 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   int num_threads = 1;
   if (result.count("t")) {
     num_threads = result["num-threads"].as<int>();
+  }
+  int max_num_chunks = 60;
+  if (result.count("max-num-chunks")) {
+    max_num_chunks = result["max-num-chunks"].as<int>();
   }
   int stop_mapping_min_num_anchors = 10;
   if (result.count("min-num-anchors")) {
@@ -986,7 +991,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
       sigmap::ExitWithMessage("No output file specified!");
     }
     std::cerr << "Output file: " << output_file_path << "\n";
-    Sigmap sigmap_for_mapping(read_seeding_step_size, num_threads, stop_mapping_min_num_anchors, output_mapping_min_num_anchors, stop_mapping_ratio, output_mapping_ratio, stop_mapping_mean_ratio, output_mapping_mean_ratio, reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
+    Sigmap sigmap_for_mapping(read_seeding_step_size, num_threads, max_num_chunks, stop_mapping_min_num_anchors, output_mapping_min_num_anchors, stop_mapping_ratio, output_mapping_ratio, stop_mapping_mean_ratio, output_mapping_mean_ratio, reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
     //sigmap_for_mapping.CWTAlign();
     //sigmap_for_mapping.DTWAlign();
     //sigmap_for_mapping.Map();
