@@ -20,7 +20,7 @@ It will generate two index files *yeast_index.pt* and *yeast_index.si*. After in
 ```
 ./sigmap -m -r yeast.fasta -p extern/kmer_models/r9.4_180mv_450bps_6mer/template_median68pA.model -x yeast_index -s /path/to/yeast/fast5/dir -o yeast_mapping.paf -t 4
 ```
-This command map all the fast5 reads in `/path/to/yeast/fast5/dir` and its subdiretories to the yeast genome using 4 threads and the output will be saved to `yeast_mapping.paf` in a modified PAF format used by [Uncalled](https://github.com/skovaka/UNCALLED). 
+This command map all the fast5 reads in `/path/to/yeast/fast5/dir` and its subdirectories to the yeast genome using 4 threads. The output will be saved to `yeast_mapping.paf` in a modified PAF format used by [Uncalled](https://github.com/skovaka/UNCALLED). 
 
 Many other parameters can be found in the help information:
 ```
