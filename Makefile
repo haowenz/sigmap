@@ -3,7 +3,8 @@ src_dir=src
 objs_dir=objs
 objs+=$(patsubst %.cc,$(objs_dir)/%.o,$(cpp_source))
 
-HDF5_DIR ?= `pwd`/extern/hdf5
+project_dir = $(shell pwd)
+HDF5_DIR ?= ${project_dir}/extern/hdf5/build
 HDF5_INCLUDE_DIR ?= ${HDF5_DIR}/include
 HDF5_LIB_DIR ?= ${HDF5_DIR}/lib
 HDF5_LIB ?= hdf5
@@ -25,8 +26,10 @@ dir:
 
 hdf5:
 	cd extern/hdf5;\
-	./configure --enable-threadsafe --disable-hl --libdir=`pwd`/lib --includedir=`pwd`/include --prefix=`pwd`/;\
-	make -j
+  mkdir build;\
+	./configure --enable-threadsafe --disable-hl --prefix="${HDF5_DIR}";\
+	make -j;\
+	make install
 
 $(exec): $(objs)
 	$(cxx) $(cxxflags) $(objs) -o $(exec) $(ldflags)
