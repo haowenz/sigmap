@@ -253,7 +253,7 @@ void Sigmap::Map() {
     if (read_feature_signal.size() > 50) {
       read_point_cloud.clear();
       chains.clear();
-      float search_radius = 0.08;
+      //float search_radius = 0.08;
       //float search_radius = 0.05;
       int read_signal_point_cloud_step_size = 8;
       //if (read_feature_signal.size() < 10000) {
@@ -269,7 +269,7 @@ void Sigmap::Map() {
       //  read_signal_point_cloud_step_size = 1;
       //}
       read_signal_point_cloud_step_size = 1;
-      reference_spatial_index.GenerateChains(read_feature_signal, read_feature_signal_stdvs, 0, read_signal_point_cloud_step_size, search_radius, num_reference_sequences, chains);
+      reference_spatial_index.GenerateChains(read_feature_signal, read_feature_signal_stdvs, 0, read_signal_point_cloud_step_size, search_radius_, num_reference_sequences, chains);
       // Save results in vector and output PAF
       double mapping_time = GetRealTime() - real_mapping_start_time;
       std::vector<std::vector<PAFMapping> > &mappings_on_diff_ref_seqs = mappings_on_diff_ref_seqs_for_diff_threads[omp_get_thread_num()];
@@ -429,8 +429,8 @@ void Sigmap::StreamingMap() {
       }
       GenerateEvents(signal_start, signal_end, read_signal_batch.GetSignalAt(read_signal_index), read_feature_signal, read_feature_signal_stdvs);
       if (read_feature_signal.size() > 50) {
-        float search_radius = 0.08;
-        reference_spatial_index.GenerateChains(read_feature_signal, read_feature_signal_stdvs, num_events, read_seeding_step_size_, search_radius, num_reference_sequences, chains);
+        //float search_radius = 0.08;
+        reference_spatial_index.GenerateChains(read_feature_signal, read_feature_signal_stdvs, num_events, read_seeding_step_size_, search_radius_, num_reference_sequences, chains);
         num_events += read_feature_signal.size();
         if (chains.size() >= 2) {
           if (chains[0].score / chains[1].score >= stop_mapping_ratio_) {
@@ -450,6 +450,9 @@ void Sigmap::StreamingMap() {
           }
         }
       }
+    }
+    if (chunk_index > 0 && (chunk_index == num_chunks || chunk_index == (uint32_t)max_num_chunks_)) {
+      --chunk_index;
     }
     float read_position_scale =  ((float)(chunk_index + 1) * chunk_size / num_events) / ((float)sample_rate / bp_per_sec);
     // Save results in vector and output PAF
@@ -509,7 +512,31 @@ void Sigmap::StreamingMap() {
     } else {
       std::string tags;
       tags.append("mt:f:" + std::to_string(mapping_time * 1000));
+      tags.append("\tci:i:" + std::to_string(chunk_index + 1));
       tags.append("\tsl:i:" + std::to_string(read_signal_batch.GetSignalLengthAt(read_signal_index)));
+      if(chains.size() >= 1) {
+        float anchor_ref_gap_avg_length = 0;
+        float anchor_read_gap_avg_length = 0;
+        float average_anchor_distance = 0;
+        for (size_t ai = 0; ai < chains[0].anchors.size(); ++ai) {
+          average_anchor_distance += chains[0].anchors[ai].distance;
+          if (ai < chains[0].anchors.size() - 1) {
+            anchor_ref_gap_avg_length += chains[0].anchors[ai].target_position - chains[0].anchors[ai + 1].target_position;
+            anchor_read_gap_avg_length += chains[0].anchors[ai].query_position - chains[0].anchors[ai + 1].query_position;
+          }
+        }
+        average_anchor_distance /= chains[0].num_anchors;
+        anchor_ref_gap_avg_length /= chains[0].num_anchors;
+        anchor_read_gap_avg_length /= chains[0].num_anchors;
+        tags.append("\tcm:i:" + std::to_string(chains[0].num_anchors));
+        tags.append("\tnc:i:" + std::to_string(chains.size()));
+        tags.append("\ts1:f:" + std::to_string(chains[0].score));
+        tags.append("\ts2:f:" + std::to_string(chains.size() > 1 ? chains[1].score : 0));
+        tags.append("\tsm:f:" + std::to_string(mean_chain_score));
+        tags.append("\tad:f:" + std::to_string(average_anchor_distance));
+        tags.append("\tat:f:" + std::to_string(anchor_ref_gap_avg_length));
+        tags.append("\taq:f:" + std::to_string(anchor_read_gap_avg_length));
+      }
       mappings_on_diff_ref_seqs[0].emplace_back(PAFMapping{(uint32_t)read_signal_index, std::string(read_signal_batch.GetSignalNameAt(read_signal_index)), (uint32_t)read_signal_batch.GetSignalLengthAt(read_signal_index), 0, 0, 0, 0, 61, (uint8_t)0, (uint8_t)1, tags});
     }
   } // end of task loop
@@ -855,13 +882,13 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   cxxopts::Options options("sigmap", "Map ONT raw signal data");
   options.add_options("Indexing")
     ("i,build-index", "Build spatial index for reference")
-    ("d,dimension", "Dimension of spatial index", cxxopts::value<int>(), "INT")
-    ("l,max-leaf", "Max leaf of spatial index", cxxopts::value<int>(), "INT");
+    ("d,dimension", "Dimension of spatial index [6]", cxxopts::value<int>(), "INT")
+    ("l,max-leaf", "Max leaf of spatial index [20]", cxxopts::value<int>(), "INT");
   //options.add_options("Signal data indexing")
   //  ("build-sig-index", "Build index for signal data directory");
   options.add_options("Mapping")
     ("m,map", "Map signal data")
-    ("step-size", "Seeding step size in reads [1]", cxxopts::value<int>(), "INT")
+    ("step-size", "Seeding step size in reads [2]", cxxopts::value<int>(), "INT")
     ("t,num-threads", "# threads for mapping [1]", cxxopts::value<int>(), "INT");
   options.add_options("Input")
     ("r,ref", "Reference file", cxxopts::value<std::string>(), "FILE")
@@ -873,10 +900,11 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   options.add_options("Output")
     ("o,output", "Output file", cxxopts::value<std::string>());
   options.add_options("Development")
-    ("max-num-chunks", "Max # chunks before stop trying to map a read [60]", cxxopts::value<int>(), "INT")
+    ("search-radius", "Search radius for each seed [0.08]", cxxopts::value<float>(), "FLT")
+    ("max-num-chunks", "Max # chunks before stop trying to map a read [30]", cxxopts::value<int>(), "INT")
     ("min-num-anchors", "Min # anchors to stop mapping [10]", cxxopts::value<int>(), "INT")
     ("min-num-anchors-output", "Min # anchors to output mappings [10]", cxxopts::value<int>(), "INT")
-    ("stop-mapping", "The ratio between best and second best chaining score to stop mapping [1.5]", cxxopts::value<float>(), "FLOAT")
+    ("stop-mapping", "The ratio between best and second best chaining score to stop mapping [1.4]", cxxopts::value<float>(), "FLOAT")
     ("stop-mapping-output", "The ratio between best and second best chaining score to output mappings [1.2]", cxxopts::value<float>(), "FLOAT")
     ("stop-mapping-mean", "The ratio between best and mean chaining score to stop mapping [5]", cxxopts::value<float>(), "FLOAT")
     ("stop-mapping-mean-output", "The ratio between best and mean chaining score to output mappings [5]", cxxopts::value<float>(), "FLOAT");
@@ -884,7 +912,11 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
     ("h,help", "Print help");
 
   auto result = options.parse(argc, argv);
-  int read_seeding_step_size = 1;
+  float search_radius = 0.08;
+  if (result.count("search-radius")) {
+    search_radius = result["search-radius"].as<float>();
+  }
+  int read_seeding_step_size = 2;
   if (result.count("step-size")) {
     read_seeding_step_size = result["step-size"].as<int>();
   }
@@ -892,7 +924,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   if (result.count("t")) {
     num_threads = result["num-threads"].as<int>();
   }
-  int max_num_chunks = 60;
+  int max_num_chunks = 30;
   if (result.count("max-num-chunks")) {
     max_num_chunks = result["max-num-chunks"].as<int>();
   }
@@ -904,7 +936,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
   if (result.count("min-num-anchors-output")) {
     output_mapping_min_num_anchors = result["min-num-anchors-output"].as<int>();
   }
-  float stop_mapping_ratio = 1.5;
+  float stop_mapping_ratio = 1.4;
   if (result.count("stop-mapping")) {
     stop_mapping_ratio = result["stop-mapping"].as<float>();
   }
@@ -926,7 +958,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
     if (result.count("d")) {
       dimension = result["dimension"].as<int>();
     }
-    int max_leaf = 10;
+    int max_leaf = 20;
     if (result.count("l")) {
       max_leaf = result["max-leaf"].as<int>();
     }
@@ -991,7 +1023,7 @@ void SigmapDriver::ParseArgsAndRun(int argc, char *argv[]) {
       sigmap::ExitWithMessage("No output file specified!");
     }
     std::cerr << "Output file: " << output_file_path << "\n";
-    Sigmap sigmap_for_mapping(read_seeding_step_size, num_threads, max_num_chunks, stop_mapping_min_num_anchors, output_mapping_min_num_anchors, stop_mapping_ratio, output_mapping_ratio, stop_mapping_mean_ratio, output_mapping_mean_ratio, reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
+    Sigmap sigmap_for_mapping(search_radius, read_seeding_step_size, num_threads, max_num_chunks, stop_mapping_min_num_anchors, output_mapping_min_num_anchors, stop_mapping_ratio, output_mapping_ratio, stop_mapping_mean_ratio, output_mapping_mean_ratio, reference_file_path, pore_model_file_path, signal_dir, reference_index_file_path, output_file_path);
     //sigmap_for_mapping.CWTAlign();
     //sigmap_for_mapping.DTWAlign();
     //sigmap_for_mapping.Map();

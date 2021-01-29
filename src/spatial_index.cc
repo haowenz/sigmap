@@ -112,6 +112,8 @@ void SpatialIndex::Load() {
   assert(spatial_index_file != NULL);
   spatial_index_ = new SigmapAdaptor<float>(dimension_ /*dim*/, point_cloud_, max_leaf_ /* max leaf */);
   spatial_index_->index->loadIndex(spatial_index_file);
+  size_t used_memory = spatial_index_->index->usedMemory(*(spatial_index_->index));
+  std::cerr << "Memory: "<< used_memory << ".\n";
   fclose(spatial_index_file);
   std::cerr << "Loaded index successfully in "<< GetRealTime() - real_start_time << "s.\n";
 }

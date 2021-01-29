@@ -15,6 +15,7 @@ ldflags=-L${HDF5_LIB_DIR} -Wl,-rpath=${HDF5_LIB_DIR} -l${HDF5_LIB} -lm -lz
 exec=sigmap
 
 all: hdf5 check_hdf5 dir $(exec) 
+Sigmap: check_hdf5 dir $(exec) 
 
 check_hdf5:
 	@[ -f "${HDF5_INCLUDE_DIR}/H5pubconf.h" ] || { echo "HDF5 headers not found" >&2; exit 1; }
