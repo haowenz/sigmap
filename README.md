@@ -16,7 +16,7 @@ First, an index needs to be built for the reference using ONT pore models (as a 
 ```
 ./sigmap -i -r yeast.fasta -p extern/kmer_models/r9.4_180mv_450bps_6mer/template_median68pA.model -o yeast_index
 ```
-It will generate two index files *yeast_index.pt* and *yeast_index.si*. After index construction, yeast raw signals in fast5 format can be mapped using
+It will generate the index file *yeast_index.si*. Note that a genome point cloud file *yeast_index.pt* will also be saved. But it can also be generated very quickly on the fly every time before mapping. After index construction, yeast raw signals in fast5 format can be mapped using
 ```
 ./sigmap -m -r yeast.fasta -p extern/kmer_models/r9.4_180mv_450bps_6mer/template_median68pA.model -x yeast_index -s /path/to/yeast/fast5/dir -o yeast_mapping.paf -t 4
 ```
