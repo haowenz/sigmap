@@ -6,7 +6,7 @@ First get the repo with submodules (make sure you use `--recursive`):
 ```
 git clone --recursive git@github.com:haowenz/sigmap.git
 ```
-Then just run:
+Make sure you have GCC version > 8. Then just run:
 ```
 cd sigmap && make
 ```
@@ -26,3 +26,8 @@ Many other parameters can be found in the help information:
 ```
 ./sigmap -h
 ```
+
+## Citing Sigmap
+If you use Sigmap, please cite:
+
+Zhang, H., Li, H., Jain, C., Cheng, H., Au, K. F., Li, H., & Aluru, S. (2021). Real-time mapping of nanopore raw signals. Bioinformatics, 37(Supplement_1), i477-i483. https://doi.org/10.1093/bioinformatics/btab264
