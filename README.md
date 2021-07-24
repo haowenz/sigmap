@@ -27,6 +27,11 @@ Many other parameters can be found in the help information:
 ./sigmap -h
 ```
 
+It is possible that your reads are compressed with the [VBZ compression](https://github.com/nanoporetech/vbz_compression) from Nanopore. Then you have to download the proper HDF5 plugin from [here](https://github.com/nanoporetech/vbz_compression/releases) and make sure it can be found by your HDF5 library:
+```
+export HDF5_PLUGIN_PATH=/path/to/hdf5/plugins/lib
+```
+
 ## Citing Sigmap
 If you use Sigmap, please cite:
 
