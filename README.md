@@ -32,6 +32,9 @@ It is possible that your reads are compressed with the [VBZ compression](https:/
 export HDF5_PLUGIN_PATH=/path/to/hdf5/plugins/lib
 ```
 
+## Getting help
+If you encounter bugs or have further questions or requests, you can raise an issue at the [issue page](https://github.com/haowenz/sigmap/issues) or contact me by email hwzhang@gatech.edu.
+
 ## Citing Sigmap
 If you use Sigmap, please cite:
 
