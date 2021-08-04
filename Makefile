@@ -9,7 +9,7 @@ HDF5_INCLUDE_DIR ?= ${HDF5_DIR}/include
 HDF5_LIB_DIR ?= ${HDF5_DIR}/lib
 HDF5_LIB ?= hdf5
 
-cxx=g++
+cxx=${CXX}
 cxxflags=-std=c++11 -Wall -O3 -fopenmp -march=native -I${HDF5_INCLUDE_DIR}
 ldflags=-L${HDF5_LIB_DIR} -Wl,-rpath=${HDF5_LIB_DIR} -l${HDF5_LIB} -lm -lz
 

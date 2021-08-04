@@ -17,7 +17,8 @@ void PoreModel::Load(const std::string &pore_model_file_path) {
   while (getline(pore_model_file_stream, pore_model_file_line)) {
     std::stringstream pore_model_file_line_string_stream(pore_model_file_line);
     // skip the header
-    if (pore_model_file_line[0] == '#' || pore_model_file_line.find("kmer") == 0) {
+    if (pore_model_file_line[0] == '#' ||
+        pore_model_file_line.find("kmer") == 0) {
       continue;
     }
     std::string kmer;
@@ -30,33 +31,45 @@ void PoreModel::Load(const std::string &pore_model_file_path) {
       first_line = false;
     }
     assert(kmer.length() == (size_t)kmer_size_);
-    uint64_t kmer_hash_value = GenerateSeedFromSequence(kmer.data(), kmer_size_, 0, kmer_size_);
+    uint64_t kmer_hash_value =
+        GenerateSeedFromSequence(kmer.data(), kmer_size_, 0, kmer_size_);
     PoreModelParameters &pore_model_parameters = pore_models_[kmer_hash_value];
-    pore_model_file_line_string_stream >> pore_model_parameters.level_mean >> pore_model_parameters.level_stdv >> pore_model_parameters.sd_mean >> pore_model_parameters.sd_stdv;
+    pore_model_file_line_string_stream >> pore_model_parameters.level_mean >>
+        pore_model_parameters.level_stdv >> pore_model_parameters.sd_mean >>
+        pore_model_parameters.sd_stdv;
     ++num_kmers;
   }
-  std::cerr << "Loaded " << num_kmers << " kmers in " << GetRealTime() - real_start_time << "s.\n";
+  std::cerr << "Loaded " << num_kmers << " kmers in "
+            << GetRealTime() - real_start_time << "s.\n";
 }
 
 void PoreModel::Print() {
   size_t num_pore_models = 1 << (kmer_size_ * 2);
   for (size_t i = 0; i < num_pore_models; ++i) {
-    std::cerr << i << " " << pore_models_[i].level_mean << " " << pore_models_[i].level_stdv << " " << pore_models_[i].sd_mean << " " << pore_models_[i].sd_stdv << "\n";
+    std::cerr << i << " " << pore_models_[i].level_mean << " "
+              << pore_models_[i].level_stdv << " " << pore_models_[i].sd_mean
+              << " " << pore_models_[i].sd_stdv << "\n";
   }
 }
 
-// This funtion return a array of level means given the [start, end) positions (0-based).
-std::vector<float> PoreModel::GetLevelMeansAt(const char *sequence, uint32_t start_position, uint32_t end_position) const { 
-  // Note that the start and end positions should be checked before calling this function
+// This funtion return a array of level means given the [start, end) positions
+// (0-based).
+std::vector<float> PoreModel::GetLevelMeansAt(const char *sequence,
+                                              uint32_t start_position,
+                                              uint32_t end_position) const {
+  // Note that the start and end positions should be checked before calling this
+  // function
   int32_t signal_length = end_position - start_position - kmer_size_ + 1;
   assert(signal_length > 0);
   std::vector<float> signal_values;
   signal_values.reserve(signal_length);
-  uint32_t mask = ((uint32_t)1 << (2 *kmer_size_)) - 1;
-  uint32_t hash_value = GenerateSeedFromSequence(sequence, start_position + signal_length, start_position, kmer_size_);
+  uint32_t mask = ((uint32_t)1 << (2 * kmer_size_)) - 1;
+  uint32_t hash_value = GenerateSeedFromSequence(
+      sequence, start_position + signal_length, start_position, kmer_size_);
   signal_values.emplace_back(pore_models_[hash_value].level_mean);
-  for (uint32_t position = start_position + 1; position < end_position - kmer_size_ + 1; ++position) {
-    uint8_t current_base = CharToUint8(sequence[position + kmer_size_]); 
+  for (uint32_t position = start_position + 1;
+       position < end_position - kmer_size_ + 1; ++position) {
+    uint8_t current_base = CharToUint8(sequence[position + kmer_size_]);
     if (current_base < 4) {
       hash_value = ((hash_value << 2) | current_base) & mask;
     } else {
@@ -66,4 +79,4 @@ std::vector<float> PoreModel::GetLevelMeansAt(const char *sequence, uint32_t sta
   }
   return signal_values;
 }
-} // namespace sigmap
+}  // namespace sigmap

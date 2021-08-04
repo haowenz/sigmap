@@ -18,9 +18,10 @@ uint32_t SequenceBatch::LoadBatch() {
   double real_start_time = GetRealTime();
   uint32_t num_sequences = 0;
   num_bases_ = 0;
-  for (uint32_t sequence_index = 0; sequence_index < max_num_sequences_; ++sequence_index) { 
+  for (uint32_t sequence_index = 0; sequence_index < max_num_sequences_;
+       ++sequence_index) {
     int length = kseq_read(sequence_kseq_);
-    while (length == 0) { // Skip the sequences of length 0
+    while (length == 0) {  // Skip the sequences of length 0
       length = kseq_read(sequence_kseq_);
     }
     if (length > 0) {
@@ -28,7 +29,7 @@ uint32_t SequenceBatch::LoadBatch() {
       std::swap(sequence_kseq_->seq, sequence->seq);
       std::swap(sequence_kseq_->name, sequence->name);
       std::swap(sequence_kseq_->comment, sequence->comment);
-      if (sequence_kseq_->qual.l != 0) { // fastq file
+      if (sequence_kseq_->qual.l != 0) {  // fastq file
         std::swap(sequence_kseq_->qual, sequence->qual);
       }
       sequence->id = num_loaded_sequences_;
@@ -37,7 +38,8 @@ uint32_t SequenceBatch::LoadBatch() {
       num_bases_ += length;
     } else {
       if (length != -1) {
-        ExitWithMessage("Didn't reach the end of sequence file, which might be corrupted!");
+        ExitWithMessage(
+            "Didn't reach the end of sequence file, which might be corrupted!");
       }
       // make sure to reach the end of file rather than meet an error
       break;
@@ -46,7 +48,8 @@ uint32_t SequenceBatch::LoadBatch() {
   if (num_sequences != 0) {
     std::cerr << "Number of sequences: " << num_sequences << ".\n";
     std::cerr << "Number of bases: " << num_bases_ << ".\n";
-    std::cerr << "Loaded sequence batch successfully in " << GetRealTime() - real_start_time << "s.\n";
+    std::cerr << "Loaded sequence batch successfully in "
+              << GetRealTime() - real_start_time << "s.\n";
   } else {
     std::cerr << "No more sequences.\n";
   }
@@ -56,7 +59,7 @@ uint32_t SequenceBatch::LoadBatch() {
 bool SequenceBatch::LoadOneSequenceAndSaveAt(uint32_t sequence_index) {
   bool no_more_sequence = false;
   int length = kseq_read(sequence_kseq_);
-  while (length == 0) { // Skip the sequences of length 0
+  while (length == 0) {  // Skip the sequences of length 0
     length = kseq_read(sequence_kseq_);
   }
   if (length > 0) {
@@ -66,12 +69,13 @@ bool SequenceBatch::LoadOneSequenceAndSaveAt(uint32_t sequence_index) {
     std::swap(sequence_kseq_->comment, sequence->comment);
     sequence->id = num_loaded_sequences_;
     ++num_loaded_sequences_;
-    if (sequence_kseq_->qual.l != 0) { // fastq file
+    if (sequence_kseq_->qual.l != 0) {  // fastq file
       std::swap(sequence_kseq_->qual, sequence->qual);
-    } 
+    }
   } else {
     if (length != -1) {
-      ExitWithMessage("Didn't reach the end of sequence file, which might be corrupted!");
+      ExitWithMessage(
+          "Didn't reach the end of sequence file, which might be corrupted!");
     }
     // make sure to reach the end of file rather than meet an error
     no_more_sequence = true;
@@ -85,16 +89,16 @@ uint32_t SequenceBatch::LoadAllSequences() {
   uint32_t num_sequences = 0;
   num_bases_ = 0;
   int length = kseq_read(sequence_kseq_);
-  while (length >= 0) { 
-    if (length == 0) { // Skip the sequences of length 0
+  while (length >= 0) {
+    if (length == 0) {  // Skip the sequences of length 0
       continue;
     } else if (length > 0) {
-      sequence_batch_.emplace_back((kseq_t*)calloc(1, sizeof(kseq_t)));
+      sequence_batch_.emplace_back((kseq_t *)calloc(1, sizeof(kseq_t)));
       kseq_t *sequence = sequence_batch_.back();
       std::swap(sequence_kseq_->seq, sequence->seq);
       std::swap(sequence_kseq_->name, sequence->name);
       std::swap(sequence_kseq_->comment, sequence->comment);
-      if (sequence_kseq_->qual.l != 0) { // fastq file
+      if (sequence_kseq_->qual.l != 0) {  // fastq file
         std::swap(sequence_kseq_->qual, sequence->qual);
       }
       sequence->id = num_loaded_sequences_;
@@ -103,7 +107,8 @@ uint32_t SequenceBatch::LoadAllSequences() {
       num_bases_ += length;
     } else {
       if (length != -1) {
-        ExitWithMessage("Didn't reach the end of sequence file, which might be corrupted!");
+        ExitWithMessage(
+            "Didn't reach the end of sequence file, which might be corrupted!");
       }
       // make sure to reach the end of file rather than meet an error
       break;
@@ -113,7 +118,8 @@ uint32_t SequenceBatch::LoadAllSequences() {
   negative_sequence_batch_.assign(num_sequences, "");
   std::cerr << "Number of sequences: " << num_sequences << ".\n";
   std::cerr << "Number of bases: " << num_bases_ << ".\n";
-  std::cerr << "Loaded all sequences successfully in " << GetRealTime() - real_start_time << "s.\n";
+  std::cerr << "Loaded all sequences successfully in "
+            << GetRealTime() - real_start_time << "s.\n";
   return num_sequences;
 }
 
@@ -121,4 +127,4 @@ void SequenceBatch::FinalizeLoading() {
   kseq_destroy(sequence_kseq_);
   gzclose(sequence_file_);
 }
-} // namespace sigmap
+}  // namespace sigmap

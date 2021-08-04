@@ -20,26 +20,27 @@ struct Signal {
   // signal
   std::vector<float> signal_values;
   std::vector<float> negative_signal_values;
-  size_t GetSignalLength() const {
-    return signal_values.size();
-  }
+  size_t GetSignalLength() const { return signal_values.size(); }
 };
 
 class SignalBatch {
  public:
-  SignalBatch(){}
-  ~SignalBatch(){}
+  SignalBatch() {}
+  ~SignalBatch() {}
   void InitializeLoading(const std::string &signal_directory);
   void FinalizeLoading();
   size_t LoadAllReadSignals();
-  void AddSignal(const hdf5_tools::File &file, const std::string &raw_path, const std::string &ch_path);
+  void AddSignal(const hdf5_tools::File &file, const std::string &raw_path,
+                 const std::string &ch_path);
   void AddSignalsFromFAST5(const std::string &fast5_file_path);
   void NormalizeSignalAt(size_t signal_index);
-  void ConvertSequencesToSignals(const SequenceBatch &sequence_batch, const PoreModel &pore_model, size_t num_sequences);
-  const Signal& GetSignalAt(size_t signal_index) const {
+  void ConvertSequencesToSignals(const SequenceBatch &sequence_batch,
+                                 const PoreModel &pore_model,
+                                 size_t num_sequences);
+  const Signal &GetSignalAt(size_t signal_index) const {
     return signals_[signal_index];
   }
-  const char* GetSignalNameAt(size_t signal_index) const {
+  const char *GetSignalNameAt(size_t signal_index) const {
     return signals_[signal_index].id.data();
   }
   size_t GetSignalLengthAt(size_t signal_index) const {
@@ -50,6 +51,6 @@ class SignalBatch {
   std::string signal_directory_;
   std::vector<Signal> signals_;
 };
-} // namespace sigmap
+}  // namespace sigmap
 
-#endif // SIGNALBATCH_H_
+#endif  // SIGNALBATCH_H_
