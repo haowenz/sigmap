@@ -135,24 +135,15 @@ void SignalBatch::AddSignal(slow5_rec_t *rec) {
   range = rec->range;
   offset = rec->offset;
 
-  std::vector<float> signal_values;
-
-  //signal_values = rec->raw_signal;
-
-  uint64_t len_raw_signal = rec->len_raw_signal;
-  for(uint64_t i=0;i<len_raw_signal;i++){
-      signal_values[i] = rec->raw_signal[i];
-  }
-
-
+  std::vector<float> signal_values(rec->len_raw_signal);
 
   // convert to pA
   uint32_t valid_signal_length = 0;
   float scale = range / digitisation;
-  for (size_t i = 0; i < signal_values.size(); i++) {
-    if ((signal_values[i] + offset) * scale > 30 &&
-        (signal_values[i] + offset) * scale < 200) {
-      signal_values[valid_signal_length] = (signal_values[i] + offset) * scale;
+  for (size_t i = 0; i < rec->len_raw_signal; i++) {
+    if ((rec->raw_signal[i] + offset) * scale > 30 &&
+        (rec->raw_signal[i] + offset) * scale < 200) {
+      signal_values[valid_signal_length] = (rec->raw_signal[i] + offset) * scale;
       ++valid_signal_length;
     }
   }
