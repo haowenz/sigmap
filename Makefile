@@ -10,13 +10,17 @@ HDF5_LIB_DIR ?= ${HDF5_DIR}/lib
 HDF5_LIB ?= hdf5
 
 cxx=${CXX}
-cxxflags=-std=c++11 -Wall -O3 -fopenmp -march=native -I${HDF5_INCLUDE_DIR}
-ldflags=-L${HDF5_LIB_DIR} -Wl,-rpath=${HDF5_LIB_DIR} -l${HDF5_LIB} -lm -lz
+#cxxflags=-std=c++11 -Wall -O3 -fopenmp -march=native -I${HDF5_INCLUDE_DIR}
+cxxflags=-std=c++11 -Wall -O3 -fopenmp -march=native -Iextern/slow5lib/include/
+#ldflags=-L${HDF5_LIB_DIR} -Wl,-rpath=${HDF5_LIB_DIR} -l${HDF5_LIB} -lm -lz
+ldflags=-L${HDF5_LIB_DIR} extern/slow5lib/lib/libslow5.a -lm -lz
 
 exec=sigmap
 
-all: hdf5 check_hdf5 dir $(exec) 
-Sigmap: check_hdf5 dir $(exec) 
+# all: hdf5 check_hdf5 dir $(exec)
+# Sigmap: check_hdf5 dir $(exec)
+
+all: dir extern/slow5lib/lib/libslow5.a $(exec)
 
 check_hdf5:
 	@[ -f "${HDF5_INCLUDE_DIR}/H5pubconf.h" ] || { echo "HDF5 headers not found" >&2; exit 1; }
@@ -32,9 +36,12 @@ hdf5:
 	make -j;\
 	make install
 
+extern/slow5lib/lib/libslow5.a:
+	make -C extern/slow5lib
+
 $(exec): $(objs)
 	$(cxx) $(cxxflags) $(objs) -o $(exec) $(ldflags)
-	
+
 $(objs_dir)/%.o: $(src_dir)/%.cc
 	$(cxx) $(cxxflags) -c $< -o $@ $(ldflags)
 
