@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <dirent.h>
 #include <float.h>
-#include <hdf5.h>
+// #include <hdf5.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -20,10 +20,10 @@
 #define LEGACY_FAST5_RAW_ROOT "/Raw/Reads/"
 
 namespace sigmap {
-struct FAST5File {
-  hid_t hdf5_file;
-  bool is_multi_fast5;
-};
+// struct FAST5File {
+//   hid_t hdf5_file;
+//   bool is_multi_fast5;
+// };
 
 inline static bool IsDirectory(const std::string &dir_path) {
   auto dir = opendir(dir_path.c_str());
@@ -114,127 +114,127 @@ inline static uint64_t GenerateSeedFromSequence(const char *sequence,
   return seed;
 }
 
-// For FAST5 manipulation
-inline static FAST5File OpenFAST5(const std::string &fast5_file_path) {
-  FAST5File fast5_file;
-  fast5_file.hdf5_file =
-      H5Fopen(fast5_file_path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
-  if (fast5_file.hdf5_file < 0) {
-    fprintf(stderr, "could not open fast5 file: %s\n", fast5_file_path.c_str());
-  }
-  // Check for attribute that indicates whether it is single or multi-fast5
-  // see: https://community.nanoporetech.com/posts/multi-fast5-format
-  const std::string indicator_p1 = "/UniqueGlobalKey/";
-  const std::string indicator_p2 = indicator_p1 + "tracking_id/";
-  bool has_indicator =
-      H5Lexists(fast5_file.hdf5_file, indicator_p1.c_str(), H5P_DEFAULT) &&
-      H5Lexists(fast5_file.hdf5_file, indicator_p2.c_str(), H5P_DEFAULT);
-  fast5_file.is_multi_fast5 = !has_indicator;
-  return fast5_file;
-}
+// // For FAST5 manipulation
+// inline static FAST5File OpenFAST5(const std::string &fast5_file_path) {
+//   FAST5File fast5_file;
+//   fast5_file.hdf5_file =
+//       H5Fopen(fast5_file_path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+//   if (fast5_file.hdf5_file < 0) {
+//     fprintf(stderr, "could not open fast5 file: %s\n", fast5_file_path.c_str());
+//   }
+//   // Check for attribute that indicates whether it is single or multi-fast5
+//   // see: https://community.nanoporetech.com/posts/multi-fast5-format
+//   const std::string indicator_p1 = "/UniqueGlobalKey/";
+//   const std::string indicator_p2 = indicator_p1 + "tracking_id/";
+//   bool has_indicator =
+//       H5Lexists(fast5_file.hdf5_file, indicator_p1.c_str(), H5P_DEFAULT) &&
+//       H5Lexists(fast5_file.hdf5_file, indicator_p2.c_str(), H5P_DEFAULT);
+//   fast5_file.is_multi_fast5 = !has_indicator;
+//   return fast5_file;
+// }
 
-inline static void CloseFAST5(FAST5File &fast5_file) {
-  H5Fclose(fast5_file.hdf5_file);
-}
+// inline static void CloseFAST5(FAST5File &fast5_file) {
+//   H5Fclose(fast5_file.hdf5_file);
+// }
 
-inline static float GetFloatAttributeInGroup(hid_t group_id,
-                                             const char *attribute_name) {
-  // The group_id should be checked somewhere else!
-  float attribute_value = NAN;
-  hid_t attribute_id = H5Aopen(group_id, attribute_name, H5P_DEFAULT);
-  if (attribute_id < 0) {
-    fprintf(stderr, "Failed to open attribute '%s' for reading.",
-            attribute_name);
-    return attribute_value;
-  }
-  herr_t err = H5Aread(attribute_id, H5T_NATIVE_FLOAT, &attribute_value);
-  if (err < 0) {
-    fprintf(stderr, "error reading attribute %s\n", attribute_name);
-    exit(EXIT_FAILURE);
-  }
-  H5Aclose(attribute_id);
-  return attribute_value;
-}
+// inline static float GetFloatAttributeInGroup(hid_t group_id,
+//                                              const char *attribute_name) {
+//   // The group_id should be checked somewhere else!
+//   float attribute_value = NAN;
+//   hid_t attribute_id = H5Aopen(group_id, attribute_name, H5P_DEFAULT);
+//   if (attribute_id < 0) {
+//     fprintf(stderr, "Failed to open attribute '%s' for reading.",
+//             attribute_name);
+//     return attribute_value;
+//   }
+//   herr_t err = H5Aread(attribute_id, H5T_NATIVE_FLOAT, &attribute_value);
+//   if (err < 0) {
+//     fprintf(stderr, "error reading attribute %s\n", attribute_name);
+//     exit(EXIT_FAILURE);
+//   }
+//   H5Aclose(attribute_id);
+//   return attribute_value;
+// }
 
-inline static void GetStringAttributeInGroup(hid_t group_id,
-                                             const char *attribute_name,
-                                             char **string_attribute) {
-  // The group_id should be checked somewhere else!
-  hid_t attribute_id = H5Aopen(group_id, attribute_name, H5P_DEFAULT);
-  hid_t attribute_type_id;
-  hid_t native_type_id;
-  htri_t is_variable_string;
-  if (attribute_id < 0) {
-    fprintf(stderr, "Failed to open attribute '%s' for reading.",
-            attribute_name);
-    *string_attribute = NULL;
-    goto close_attr;
-  }
-  // Get data type and check it is a fixed-length string
-  attribute_type_id = H5Aget_type(attribute_id);
-  if (attribute_type_id < 0) {
-    fprintf(stderr, "failed to get attribute type %s\n", attribute_name);
-    *string_attribute = NULL;
-    goto close_type;
-  }
-  if (H5Tget_class(attribute_type_id) != H5T_STRING) {
-    fprintf(stderr, "attribute %s is not a string\n", attribute_name);
-    *string_attribute = NULL;
-    goto close_type;
-  }
-  native_type_id = H5Tget_native_type(attribute_type_id, H5T_DIR_ASCEND);
-  if (native_type_id < 0) {
-    fprintf(stderr, "failed to get native type for %s\n", attribute_name);
-    *string_attribute = NULL;
-    goto close_native_type;
-  }
-  is_variable_string = H5Tis_variable_str(attribute_type_id);
-  if (is_variable_string > 0) {
-    // variable length string
-    // char* buffer;
-    // herr_t err = H5Aread(attribute_id, native_type_id, &string_attribute);
-    herr_t err = H5Aread(attribute_id, native_type_id, string_attribute);
-    if (err < 0) {
-      fprintf(stderr, "error reading attribute %s\n", attribute_name);
-      exit(EXIT_FAILURE);
-    }
-    // out = buffer;
-    // free(buffer);
-    // buffer = NULL;
-  } else if (is_variable_string == 0) {
-    // fixed length string
-    // Get the storage size and allocate
-    size_t storage_size = H5Aget_storage_size(attribute_id);
-    ;
-    // char* buffer;
-    // buffer = (char*)calloc(storage_size + 1, sizeof(char));
-    *string_attribute = (char *)calloc(storage_size + 1, sizeof(char));
-    // finally read the attribute
-    herr_t err = H5Aread(attribute_id, attribute_type_id, *string_attribute);
-    if (err < 0) {
-      fprintf(stderr, "error reading attribute %s\n", attribute_name);
-      exit(EXIT_FAILURE);
-    }
-    // clean up
-    // free(buffer);
-  } else {
-    fprintf(stderr,
-            "error when determing whether it is a variable string for "
-            "attribute %s\n",
-            attribute_name);
-    exit(EXIT_FAILURE);
-  }
-  // H5Aread(attribute_id, H5T_NATIVE_FLOAT, &attribute_value);
-  // H5Aclose(attribute_id);
-close_native_type:
-  H5Tclose(native_type_id);
-close_type:
-  H5Tclose(attribute_type_id);
-close_attr:
-  H5Aclose(attribute_id);
-  // close_group:
-  //  H5Gclose(group);
-}
+// inline static void GetStringAttributeInGroup(hid_t group_id,
+//                                              const char *attribute_name,
+//                                              char **string_attribute) {
+//   // The group_id should be checked somewhere else!
+//   hid_t attribute_id = H5Aopen(group_id, attribute_name, H5P_DEFAULT);
+//   hid_t attribute_type_id;
+//   hid_t native_type_id;
+//   htri_t is_variable_string;
+//   if (attribute_id < 0) {
+//     fprintf(stderr, "Failed to open attribute '%s' for reading.",
+//             attribute_name);
+//     *string_attribute = NULL;
+//     goto close_attr;
+//   }
+//   // Get data type and check it is a fixed-length string
+//   attribute_type_id = H5Aget_type(attribute_id);
+//   if (attribute_type_id < 0) {
+//     fprintf(stderr, "failed to get attribute type %s\n", attribute_name);
+//     *string_attribute = NULL;
+//     goto close_type;
+//   }
+//   if (H5Tget_class(attribute_type_id) != H5T_STRING) {
+//     fprintf(stderr, "attribute %s is not a string\n", attribute_name);
+//     *string_attribute = NULL;
+//     goto close_type;
+//   }
+//   native_type_id = H5Tget_native_type(attribute_type_id, H5T_DIR_ASCEND);
+//   if (native_type_id < 0) {
+//     fprintf(stderr, "failed to get native type for %s\n", attribute_name);
+//     *string_attribute = NULL;
+//     goto close_native_type;
+//   }
+//   is_variable_string = H5Tis_variable_str(attribute_type_id);
+//   if (is_variable_string > 0) {
+//     // variable length string
+//     // char* buffer;
+//     // herr_t err = H5Aread(attribute_id, native_type_id, &string_attribute);
+//     herr_t err = H5Aread(attribute_id, native_type_id, string_attribute);
+//     if (err < 0) {
+//       fprintf(stderr, "error reading attribute %s\n", attribute_name);
+//       exit(EXIT_FAILURE);
+//     }
+//     // out = buffer;
+//     // free(buffer);
+//     // buffer = NULL;
+//   } else if (is_variable_string == 0) {
+//     // fixed length string
+//     // Get the storage size and allocate
+//     size_t storage_size = H5Aget_storage_size(attribute_id);
+//     ;
+//     // char* buffer;
+//     // buffer = (char*)calloc(storage_size + 1, sizeof(char));
+//     *string_attribute = (char *)calloc(storage_size + 1, sizeof(char));
+//     // finally read the attribute
+//     herr_t err = H5Aread(attribute_id, attribute_type_id, *string_attribute);
+//     if (err < 0) {
+//       fprintf(stderr, "error reading attribute %s\n", attribute_name);
+//       exit(EXIT_FAILURE);
+//     }
+//     // clean up
+//     // free(buffer);
+//   } else {
+//     fprintf(stderr,
+//             "error when determing whether it is a variable string for "
+//             "attribute %s\n",
+//             attribute_name);
+//     exit(EXIT_FAILURE);
+//   }
+//   // H5Aread(attribute_id, H5T_NATIVE_FLOAT, &attribute_value);
+//   // H5Aclose(attribute_id);
+// close_native_type:
+//   H5Tclose(native_type_id);
+// close_type:
+//   H5Tclose(attribute_type_id);
+// close_attr:
+//   H5Aclose(attribute_id);
+//   // close_group:
+//   //  H5Gclose(group);
+// }
 
 // For signal processing
 static inline void GetSignalMinAndMax(const float *signal_values,

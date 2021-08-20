@@ -1,6 +1,6 @@
 #include "signal_batch.h"
 
-#include <hdf5.h>
+// #include <hdf5.h>
 
 #include <algorithm>
 #include <cassert>
@@ -42,7 +42,7 @@ size_t SignalBatch::LoadAllReadSignals() {
       dir_list.insert(dir_list.end(), sub_relative_paths.begin(),
                       sub_relative_paths.end());
     }
-    bool is_fast5 = absolute_path.find(".fast5") != std::string::npos;
+    bool is_fast5 = absolute_path.find(".blow5") != std::string::npos;
     if (is_fast5) {
       fast5_list.emplace_back(absolute_path);
     } else {
@@ -58,83 +58,92 @@ size_t SignalBatch::LoadAllReadSignals() {
   return signals_.size();
 }
 
+// void SignalBatch::AddSignalsFromFAST5(const std::string &fast5_file_path) {
+//   hdf5_tools::File fast5_file;
+//   fast5_file.open(fast5_file_path);
+//   // Check format
+//   bool is_single = false;
+//   std::vector<std::string> fast5_file_groups = fast5_file.list_group("/");
+//   for (std::string &group : fast5_file_groups) {
+//     if (group == "Raw") {
+//       is_single = true;
+//       break;
+//     }
+//   }
+//   if (is_single) {
+//     for (std::string &read : fast5_file.list_group("/Raw/Reads")) {
+//       std::string read_id = "";
+//       for (auto a : fast5_file.get_attr_map("/Raw/Reads/" + read)) {
+//         if (a.first == "read_id") {
+//           read_id = a.second;
+//           break;
+//         }
+//       }
+//       if (read_id.empty()) {
+//         std::cerr << "Error: failed to find read_id\n";
+//         exit(-1);
+//       }
+//       std::string raw_path = "/Raw/Reads/" + read;
+//       std::string ch_path = "/UniqueGlobalKey/channel_id";
+//       AddSignal(fast5_file, raw_path, ch_path);
+//     }
+//   } else {
+//     signals_.reserve(signals_.size() + fast5_file_groups.size());
+//     for (std::string &read : fast5_file_groups) {
+//       std::string raw_path = "/" + read + "/Raw";
+//       std::string ch_path = "/" + read + "/channel_id";
+//       AddSignal(fast5_file, raw_path, ch_path);
+//     }
+//   }
+//   fast5_file.close();
+// }
+
+
 void SignalBatch::AddSignalsFromFAST5(const std::string &fast5_file_path) {
-  hdf5_tools::File fast5_file;
-  fast5_file.open(fast5_file_path);
-  // Check format
-  bool is_single = false;
-  std::vector<std::string> fast5_file_groups = fast5_file.list_group("/");
-  for (std::string &group : fast5_file_groups) {
-    if (group == "Raw") {
-      is_single = true;
-      break;
+
+    slow5_file_t *sp = slow5_open(fast5_file_path.c_str(),"r");
+    if(sp==NULL){
+       fprintf(stderr,"Error in opening file\n");
+       exit(EXIT_FAILURE);
     }
-  }
-  if (is_single) {
-    for (std::string &read : fast5_file.list_group("/Raw/Reads")) {
-      std::string read_id = "";
-      for (auto a : fast5_file.get_attr_map("/Raw/Reads/" + read)) {
-        if (a.first == "read_id") {
-          read_id = a.second;
-          break;
-        }
-      }
-      if (read_id.empty()) {
-        std::cerr << "Error: failed to find read_id\n";
-        exit(-1);
-      }
-      std::string raw_path = "/Raw/Reads/" + read;
-      std::string ch_path = "/UniqueGlobalKey/channel_id";
-      AddSignal(fast5_file, raw_path, ch_path);
+    slow5_rec_t *rec = NULL;
+    int ret=0;
+
+    while((ret = slow5_get_next(&rec,sp)) >= 0){
+        AddSignal(rec);
     }
-  } else {
-    signals_.reserve(signals_.size() + fast5_file_groups.size());
-    for (std::string &read : fast5_file_groups) {
-      std::string raw_path = "/" + read + "/Raw";
-      std::string ch_path = "/" + read + "/channel_id";
-      AddSignal(fast5_file, raw_path, ch_path);
+
+    if(ret != SLOW5_ERR_EOF){  //check if proper end of file has been reached
+        fprintf(stderr,"Error in slow5_get_next. Error code %d\n",ret);
+        exit(EXIT_FAILURE);
     }
-  }
-  fast5_file.close();
+
+    slow5_rec_free(rec);
+
+    slow5_close(sp);
+
 }
 
-void SignalBatch::AddSignal(const hdf5_tools::File &file,
-                            const std::string &raw_path,
-                            const std::string &ch_path) {
+
+void SignalBatch::AddSignal(slow5_rec_t *rec) {
   std::string id;
-  for (auto a : file.get_attr_map(raw_path)) {
-    if (a.first == "read_id") {
-      id = a.second;
-    } else if (a.first == "read_number") {
-      // number = atoi(a.second.c_str());
-    } else if (a.first == "start_time") {
-      // start_sample = atoi(a.second.c_str());
-    }
-  }
+
+  id = rec->read_id;
 
   float digitisation = 0, range = 0, offset = 0;
-  for (auto a : file.get_attr_map(ch_path)) {
-    if (a.first == "channel_number") {
-      // channel_idx = atoi(a.second.c_str()) - 1;
-    } else if (a.first == "digitisation") {
-      digitisation = atof(a.second.c_str());
-    } else if (a.first == "range") {
-      range = atof(a.second.c_str());
-    } else if (a.first == "offset") {
-      offset = atof(a.second.c_str());
-    }
-  }
+  digitisation = rec->digitisation;
+  range = rec->range;
+  offset = rec->offset;
 
-  std::string sig_path = raw_path + "/Signal";
-  std::vector<float> signal_values;
-  file.read(sig_path, signal_values);
+  std::vector<float> signal_values(rec->len_raw_signal);
+
   // convert to pA
   uint32_t valid_signal_length = 0;
   float scale = range / digitisation;
-  for (size_t i = 0; i < signal_values.size(); i++) {
-    if ((signal_values[i] + offset) * scale > 30 &&
-        (signal_values[i] + offset) * scale < 200) {
-      signal_values[valid_signal_length] = (signal_values[i] + offset) * scale;
+  for (size_t i = 0; i < rec->len_raw_signal; i++) {
+    if ((rec->raw_signal[i] + offset) * scale > 30 &&
+        (rec->raw_signal[i] + offset) * scale < 200) {
+      signal_values[valid_signal_length] = (rec->raw_signal[i] + offset) * scale;
       ++valid_signal_length;
     }
   }
@@ -145,6 +154,54 @@ void SignalBatch::AddSignal(const hdf5_tools::File &file,
   signals_.emplace_back(Signal{id, digitisation, range, offset, signal_values,
                                std::vector<float>()});
 }
+
+// void SignalBatch::AddSignal(const hdf5_tools::File &file,
+//                             const std::string &raw_path,
+//                             const std::string &ch_path) {
+//   std::string id;
+//   for (auto a : file.get_attr_map(raw_path)) {
+//     if (a.first == "read_id") {
+//       id = a.second;
+//     } else if (a.first == "read_number") {
+//       // number = atoi(a.second.c_str());
+//     } else if (a.first == "start_time") {
+//       // start_sample = atoi(a.second.c_str());
+//     }
+//   }
+
+//   float digitisation = 0, range = 0, offset = 0;
+//   for (auto a : file.get_attr_map(ch_path)) {
+//     if (a.first == "channel_number") {
+//       // channel_idx = atoi(a.second.c_str()) - 1;
+//     } else if (a.first == "digitisation") {
+//       digitisation = atof(a.second.c_str());
+//     } else if (a.first == "range") {
+//       range = atof(a.second.c_str());
+//     } else if (a.first == "offset") {
+//       offset = atof(a.second.c_str());
+//     }
+//   }
+
+//   std::string sig_path = raw_path + "/Signal";
+//   std::vector<float> signal_values;
+//   file.read(sig_path, signal_values);
+//   // convert to pA
+//   uint32_t valid_signal_length = 0;
+//   float scale = range / digitisation;
+//   for (size_t i = 0; i < signal_values.size(); i++) {
+//     if ((signal_values[i] + offset) * scale > 30 &&
+//         (signal_values[i] + offset) * scale < 200) {
+//       signal_values[valid_signal_length] = (signal_values[i] + offset) * scale;
+//       ++valid_signal_length;
+//     }
+//   }
+//   if (valid_signal_length < signal_values.size()) {
+//     signal_values.erase(signal_values.begin() + valid_signal_length,
+//                         signal_values.end());
+//   }
+//   signals_.emplace_back(Signal{id, digitisation, range, offset, signal_values,
+//                                std::vector<float>()});
+// }
 
 void SignalBatch::NormalizeSignalAt(size_t signal_index) {
   //// Should use a linear algorithm like median of medians
