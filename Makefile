@@ -11,12 +11,12 @@ HDF5_LIB ?= hdf5
 
 cxx=${CXX}
 cxxflags=-std=c++11 -Wall -O3 -fopenmp -march=native -I${HDF5_INCLUDE_DIR}
-ldflags=-L${HDF5_LIB_DIR} -Wl,-rpath=${HDF5_LIB_DIR} -l${HDF5_LIB} -lm -lz
+ldflags=${HDF5_LIB_DIR}/lib${HDF5_LIB}.a -lm -lz -ldl
 
 exec=sigmap
 
-all: hdf5 check_hdf5 dir $(exec) 
-Sigmap: check_hdf5 dir $(exec) 
+all: hdf5 check_hdf5 dir $(exec)
+Sigmap: check_hdf5 dir $(exec)
 
 check_hdf5:
 	@[ -f "${HDF5_INCLUDE_DIR}/H5pubconf.h" ] || { echo "HDF5 headers not found" >&2; exit 1; }
@@ -34,9 +34,9 @@ hdf5:
 
 $(exec): $(objs)
 	$(cxx) $(cxxflags) $(objs) -o $(exec) $(ldflags)
-	
+
 $(objs_dir)/%.o: $(src_dir)/%.cc
-	$(cxx) $(cxxflags) -c $< -o $@ $(ldflags)
+	$(cxx) $(cxxflags) -c $< -o $@
 
 .PHONY: clean
 clean:
