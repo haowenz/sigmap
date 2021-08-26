@@ -25,6 +25,7 @@ size_t SignalBatch::LoadAllReadSignals() {
   auto dir_list = ListDirectory(signal_directory_);
   // two rounds, get all the fast5 absolute paths first and then load reads
   std::vector<std::string> fast5_list;
+  std::vector<std::string> slow5_list;
   for (size_t pi = 0; pi < dir_list.size(); ++pi) {
     std::string &relative_path = dir_list[pi];
     if (relative_path == "." or relative_path == "..") {
@@ -43,15 +44,21 @@ size_t SignalBatch::LoadAllReadSignals() {
                       sub_relative_paths.end());
     }
     bool is_fast5 = absolute_path.find(".fast5") != std::string::npos;
+    bool is_slow5 = absolute_path.find(".blow5") != std::string::npos;
     if (is_fast5) {
       fast5_list.emplace_back(absolute_path);
-    } else {
+    }else if(is_slow5) {
+      slow5_list.emplace_back(absolute_path);
+    }else{
       // don't put it into index
     }
   }
   signals_.reserve(fast5_list.size());
   for (size_t pi = 0; pi < fast5_list.size(); ++pi) {
     AddSignalsFromFAST5(fast5_list[pi]);
+  }
+  for (size_t pi = 0; pi < slow5_list.size(); ++pi) {
+    AddSignalsFromSLOW5(slow5_list[pi]);
   }
   std::cerr << "Loaded " << signals_.size() << " reads in "
             << GetRealTime() - real_start_time << "s.\n";
@@ -135,6 +142,62 @@ void SignalBatch::AddSignal(const hdf5_tools::File &file,
     if ((signal_values[i] + offset) * scale > 30 &&
         (signal_values[i] + offset) * scale < 200) {
       signal_values[valid_signal_length] = (signal_values[i] + offset) * scale;
+      ++valid_signal_length;
+    }
+  }
+  if (valid_signal_length < signal_values.size()) {
+    signal_values.erase(signal_values.begin() + valid_signal_length,
+                        signal_values.end());
+  }
+  signals_.emplace_back(Signal{id, digitisation, range, offset, signal_values,
+                               std::vector<float>()});
+}
+
+void SignalBatch::AddSignalsFromSLOW5(const std::string &slow5_file_path) {
+
+    slow5_file_t *sp = slow5_open(slow5_file_path.c_str(),"r");
+    if(sp==NULL){
+       fprintf(stderr,"Error in opening file\n");
+       exit(EXIT_FAILURE);
+    }
+    slow5_rec_t *rec = NULL;
+    int ret=0;
+
+    while((ret = slow5_get_next(&rec,sp)) >= 0){
+        AddSignal(rec);
+    }
+
+    if(ret != SLOW5_ERR_EOF){  //check if proper end of file has been reached
+        fprintf(stderr,"Error in slow5_get_next. Error code %d\n",ret);
+        exit(EXIT_FAILURE);
+    }
+
+    slow5_rec_free(rec);
+
+    slow5_close(sp);
+
+}
+
+
+void SignalBatch::AddSignal(slow5_rec_t *rec) {
+  std::string id;
+
+  id = rec->read_id;
+
+  float digitisation = 0, range = 0, offset = 0;
+  digitisation = rec->digitisation;
+  range = rec->range;
+  offset = rec->offset;
+
+  std::vector<float> signal_values(rec->len_raw_signal);
+
+  // convert to pA
+  uint32_t valid_signal_length = 0;
+  float scale = range / digitisation;
+  for (size_t i = 0; i < rec->len_raw_signal; i++) {
+    if ((rec->raw_signal[i] + offset) * scale > 30 &&
+        (rec->raw_signal[i] + offset) * scale < 200) {
+      signal_values[valid_signal_length] = (rec->raw_signal[i] + offset) * scale;
       ++valid_signal_length;
     }
   }
