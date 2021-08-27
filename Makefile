@@ -18,12 +18,16 @@ ldflags=${HDF5_LIB_DIR}/lib${HDF5_LIB}.a ${SLOW5_LIB_DIR}/libslow5.a -lm -lz -ld
 
 exec=sigmap
 
-all: hdf5 check_hdf5 dir $(exec)
-Sigmap: check_hdf5 dir $(exec)
+all: hdf5 slow5 check_hdf5 check_slow5 dir $(exec)
+Sigmap: check_slow5 check_hdf5 dir $(exec)
 
 check_hdf5:
 	@[ -f "${HDF5_INCLUDE_DIR}/H5pubconf.h" ] || { echo "HDF5 headers not found" >&2; exit 1; }
 	@[ -f "${HDF5_LIB_DIR}/lib${HDF5_LIB}.so" ] || [ -f "${HDF5_LIB_DIR}/lib${HDF5_LIB}.a" ] || { echo "HDF5 library not found" >&2; exit 1; }
+
+check_slow5:
+	@[ -f "${SLOW5_INCLUDE_DIR}/slow5/slow5.h" ] || { echo "SLOW5 headers not found" >&2; exit 1; }
+	@[ -f "${SLOW5_LIB_DIR}/libslow5.so" ] || [ -f "${SLOW5_LIB_DIR}/libslow5.a" ] || { echo "SLOW5 library not found" >&2; exit 1; }
 
 dir:
 	mkdir -p $(objs_dir)
