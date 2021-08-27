@@ -41,8 +41,9 @@ void SpatialIndex::GeneratePointCloudOnOneDirection(
          signal_position += step_size) {
       if (!is_masked[signal_index][signal_position]) {
         if (signal_position == 0 || point_cloud.empty() ||
-            (signal_position > 0 && abs(signal_values[signal_position] -
-                                        point_cloud.back().value) > 0.01)) {
+            (signal_position > 0 &&
+             std::fabs(signal_values[signal_position] -
+                       point_cloud.back().value) > 0.01)) {
           uint64_t strand = direction == Positive ? 0 : 1;
           uint64_t position =
               ((((uint64_t)signal_index) << 32 | (uint32_t)signal_position)
@@ -330,7 +331,7 @@ void SpatialIndex::GenerateChains(const std::vector<float> &query_signal,
     float min_diff = std::numeric_limits<float>::max();
     // for (int di = 0; di < dimension_; ++di) {
     for (int di = 1; di < dimension_; ++di) {
-      float diff = abs(query_signal[pi + di] - query_signal[pi + di - 1]);
+      float diff = std::fabs(query_signal[pi + di] - query_signal[pi + di - 1]);
       // if (diff < min_diff) {
       min_diff += diff;
       //}
