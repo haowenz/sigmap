@@ -8,19 +8,26 @@ HDF5_DIR ?= ${project_dir}/extern/hdf5/build
 HDF5_INCLUDE_DIR ?= ${HDF5_DIR}/include
 HDF5_LIB_DIR ?= ${HDF5_DIR}/lib
 HDF5_LIB ?= hdf5
+SLOW5_DIR ?= ${project_dir}/extern/slow5lib/
+SLOW5_INCLUDE_DIR ?= ${SLOW5_DIR}/include
+SLOW5_LIB_DIR ?= ${SLOW5_DIR}/lib
 
 cxx=${CXX}
-cxxflags=-std=c++11 -Wall -O3 -fopenmp -march=native -I${HDF5_INCLUDE_DIR}
-ldflags=${HDF5_LIB_DIR}/lib${HDF5_LIB}.a -lm -lz -ldl
+cxxflags=-std=c++11 -Wall -O3 -fopenmp -march=native -I${HDF5_INCLUDE_DIR} -I${SLOW5_INCLUDE_DIR}
+ldflags=${HDF5_LIB_DIR}/lib${HDF5_LIB}.a ${SLOW5_LIB_DIR}/libslow5.a -lm -lz -ldl
 
 exec=sigmap
 
-all: hdf5 check_hdf5 dir $(exec)
-Sigmap: check_hdf5 dir $(exec)
+all: hdf5 slow5 check_hdf5 check_slow5 dir $(exec)
+Sigmap: check_slow5 check_hdf5 dir $(exec)
 
 check_hdf5:
 	@[ -f "${HDF5_INCLUDE_DIR}/H5pubconf.h" ] || { echo "HDF5 headers not found" >&2; exit 1; }
 	@[ -f "${HDF5_LIB_DIR}/lib${HDF5_LIB}.so" ] || [ -f "${HDF5_LIB_DIR}/lib${HDF5_LIB}.a" ] || { echo "HDF5 library not found" >&2; exit 1; }
+
+check_slow5:
+	@[ -f "${SLOW5_INCLUDE_DIR}/slow5/slow5.h" ] || { echo "SLOW5 headers not found" >&2; exit 1; }
+	@[ -f "${SLOW5_LIB_DIR}/libslow5.so" ] || [ -f "${SLOW5_LIB_DIR}/libslow5.a" ] || { echo "SLOW5 library not found" >&2; exit 1; }
 
 dir:
 	mkdir -p $(objs_dir)
@@ -31,6 +38,9 @@ hdf5:
 	./configure --enable-threadsafe --disable-hl --prefix="${HDF5_DIR}";\
 	make -j;\
 	make install
+
+slow5:
+	make -C ${SLOW5_DIR}
 
 $(exec): $(objs)
 	$(cxx) $(cxxflags) $(objs) -o $(exec) $(ldflags)

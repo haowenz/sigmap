@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <slow5/slow5.h>
 
 #include "hdf5_tools.hpp"
 #include "pore_model.h"
@@ -32,7 +33,9 @@ class SignalBatch {
   size_t LoadAllReadSignals();
   void AddSignal(const hdf5_tools::File &file, const std::string &raw_path,
                  const std::string &ch_path);
+  void AddSignal(slow5_rec_t *rec);
   void AddSignalsFromFAST5(const std::string &fast5_file_path);
+  void AddSignalsFromSLOW5(const std::string &slow5_file_path);
   void NormalizeSignalAt(size_t signal_index);
   void ConvertSequencesToSignals(const SequenceBatch &sequence_batch,
                                  const PoreModel &pore_model,
